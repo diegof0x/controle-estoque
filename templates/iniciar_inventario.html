@@ -1,0 +1,61 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Iniciar Novo Inventário - Controle Total{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Iniciar Novo Inventário</h1>
+</div>
+
+<p class="lead">Selecione os produtos que farão parte desta contagem. Você pode selecionar todos os itens para um inventário geral ou apenas alguns para um inventário parcial.</p>
+
+<form action="{{ url_for('iniciar_inventario') }}" method="post">
+    <div class="card">
+        <div class="card-header">
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="selecionarTodos">
+                <label class="form-check-label" for="selecionarTodos">
+                    <strong>Selecionar Todos os Produtos</strong>
+                </label>
+            </div>
+        </div>
+        <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+            <table class="table table-hover">
+                <tbody>
+                    {% for produto in todos_produtos %}
+                    <tr>
+                        <td>
+                            <div class="form-check">
+                                <input class="form-check-input produto-checkbox" type="checkbox" name="produtos_selecionados" value="{{ produto.id }}" id="produto_{{ produto.id }}">
+                                <label class="form-check-label" for="produto_{{ produto.id }}">
+                                    {{ produto.descricao }} <small class="text-muted"> (Cód: {{ produto.codigo_interno }})</small>
+                                </label>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer text-end">
+            <a href="{{ url_for('pagina_inicial') }}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-primary">Iniciar Inventário com Itens Selecionados</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const selecionarTodos = document.getElementById('selecionarTodos');
+        const checkboxes = document.querySelectorAll('.produto-checkbox');
+
+        selecionarTodos.addEventListener('change', function(e) {
+            checkboxes.forEach(function(checkbox) {
+                checkbox.checked = e.target.checked;
+            });
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Editar Usuário - Controle Total{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <h1>Editando Usuário: {{ usuario.nome }}</h1>
+    </div>
+
+    <form action="{{ url_for('salvar_edicao_usuario') }}" method="post">
+        <input type="hidden" name="usuario_id" value="{{ usuario.id }}">
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="nome" class="form-label">Nome:</label>
+                    <input type="text" class="form-control" id="nome" name="nome" value="{{ usuario.nome }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="email" class="form-label">E-mail:</label>
+                    <input type="email" class="form-control" id="email" name="email" value="{{ usuario.email }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="role" class="form-label">Função:</label>
+                    <select class="form-select" id="role" name="role">
+                        <option value="almoxarife" {% if usuario.role == 'almoxarife' %}selected{% endif %}>Almoxarife</option>
+                        <option value="gestor" {% if usuario.role == 'gestor' %}selected{% endif %}>Gestor</option>
+                    </select>
+                </div>
+                <p class="text-muted"><small>Obs: A alteração de senha deve ser feita em um módulo separado por segurança.</small></p>
+                <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                <a href="{{ url_for('pagina_usuarios') }}" class="btn btn-secondary">Cancelar</a>
+            </div>
+        </div>
+    </form>
+{% endblock %}

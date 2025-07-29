@@ -1,0 +1,100 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Revisar Inventário #{{ inventario.id }} - Controle Total{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Revisar Inventário #{{ inventario.id }}</h1>
+    <form action="{{ url_for('exportar_relatorio_inventario_csv') }}" method="get">
+        <input type="hidden" name="inventario_id" value="{{ inventario.id }}">
+        <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-excel-fill me-2"></i>Exportar para CSV</button>
+    </form>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <p class="mb-1"><strong>Iniciado em:</strong> {{ convert_utc_to_local(inventario.data_inicio) }}</p>
+        <p class="mb-0"><strong>Iniciado por:</strong> {{ inventario.usuario_iniciou.nome if inventario.usuario_iniciou else 'N/A' }}</p>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        Filtros de Visualização
+    </div>
+    <div class="card-body">
+        <a href="{{ url_for('pagina_revisar_inventario', inventario_id=inventario.id, filtro='todos') }}" class="btn btn-sm {% if filtro == 'todos' %}btn-primary{% else %}btn-outline-primary{% endif %}">Mostrar Todos</a>
+        <a href="{{ url_for('pagina_revisar_inventario', inventario_id=inventario.id, filtro='divergencia') }}" class="btn btn-sm {% if filtro == 'divergencia' %}btn-danger{% else %}btn-outline-danger{% endif %}">Apenas com Divergência</a>
+        <a href="{{ url_for('pagina_revisar_inventario', inventario_id=inventario.id, filtro='nao_contados') }}" class="btn btn-sm {% if filtro == 'nao_contados' %}btn-warning{% else %}btn-outline-warning{% endif %}">Apenas Não Contados</a>
+    </div>
+</div>
+
+
+<div class="table-responsive">
+    <table class="table table-bordered table-sm">
+        <thead class="table-light">
+            <tr>
+                <th>Produto</th>
+                <th class="text-center">Estoque Teórico</th>
+                <th class="text-center">Qtd. Contada</th>
+                <th class="text-center">Diferença</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in itens_inventario %}
+            <tr class="{% if item.quantidade_contada is not none and item.quantidade_contada != item.quantidade_teorica %}table-warning{% endif %}">
+                <td>
+                    {{ item.produtos.descricao if item.produtos else 'N/A' }}
+                    <small class="d-block text-muted">Cód: {{ item.produtos.codigo_interno if item.produtos }}</small>
+                </td>
+                <td class="text-center align-middle">{{ item.quantidade_teorica }}</td>
+                <td class="text-center align-middle">
+                    {% if item.quantidade_contada is not none %}
+                        {{ item.quantidade_contada }}
+                    {% else %}
+                        <span class="text-muted"><em>Não contado</em></span>
+                    {% endif %}
+                </td>
+                <td class="text-center align-middle">
+                    {% if item.quantidade_contada is not none %}
+                        {% set diferenca = item.quantidade_contada - item.quantidade_teorica %}
+                        <span class="badge {% if diferenca > 0 %}bg-success{% elif diferenca < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                            {{ '+' if diferenca > 0 }}{{ diferenca }}
+                        </span>
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center">Nenhum item neste inventário.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<hr>
+
+<form action="{{ url_for('finalizar_inventario') }}" method="post" onsubmit="return confirm('ATENÇÃO: Esta ação é irreversível. O estoque do sistema será ajustado com base nestes números. Deseja continuar?');">
+    <input type="hidden" name="inventario_id" value="{{ inventario.id }}">
+    <div class="card">
+        <div class="card-header">
+            Finalizar e Ajustar Estoque
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label for="observacoes" class="form-label">Observações / Justificativas Finais</label>
+                <textarea class="form-control" id="observacoes" name="observacoes" rows="3" placeholder="Ex: Contagem realizada pela equipe do almoxarifado. Diferença no item X devido a quebra."></textarea>
+            </div>
+            <div class="alert alert-warning">
+                <strong>Atenção:</strong> Ao clicar no botão abaixo, o status deste inventário será alterado para "Finalizado", e as movimentações de ajuste (perdas e sobras) serão geradas automaticamente no sistema.
+            </div>
+        </div>
+        <div class="card-footer text-end">
+            <a href="{{ url_for('pagina_inventarios_em_andamento') }}" class="btn btn-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle me-2"></i>Aprovar e Ajustar Estoque</button>
+        </div>
+    </div>
+</form>
+
+{% endblock %}

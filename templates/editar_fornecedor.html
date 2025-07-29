@@ -1,0 +1,39 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Editar Fornecedor - Controle Total{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <h1>Editando Fornecedor</h1>
+    </div>
+
+    <form action="{{ url_for('salvar_edicao_fornecedor') }}" method="post">
+        <input type="hidden" name="fornecedor_id" value="{{ fornecedor.id }}">
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="razao_social" class="form-label">Razão Social:</label>
+                    <input type="text" class="form-control" id="razao_social" name="razao_social" value="{{ fornecedor.razao_social }}" required>
+                </div>
+                <div class="mb-3">
+                    <label for="cnpj" class="form-label">CNPJ:</label>
+                    <input type="text" class="form-control" id="cnpj" name="cnpj" value="{{ fornecedor.cnpj }}" required maxlength="18">
+                </div>
+                <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                <a href="{{ url_for('pagina_fornecedores') }}" class="btn btn-secondary">Cancelar</a>
+            </div>
+        </div>
+    </form>
+    <script>
+        const cnpjInput = document.getElementById('cnpj');
+        cnpjInput.addEventListener('input', function (e) {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 14) value = value.slice(0, 14);
+            value = value.replace(/^(\d{2})(\d)/, '$1.$2');
+            value = value.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+            value = value.replace(/\.(\d{3})(\d)/, '.$1/$2');
+            value = value.replace(/(\d{4})(\d)/, '$1-$2');
+            e.target.value = value;
+        });
+    </script>
+{% endblock %}

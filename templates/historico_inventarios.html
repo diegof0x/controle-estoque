@@ -1,0 +1,50 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Histórico de Inventários - Controle Total{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Histórico de Inventários</h1>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Data de Início</th>
+                <th>Data de Finalização</th>
+                <th>Finalizado por</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inventario in inventarios %}
+            <tr>
+                <td>#{{ inventario.id }}</td>
+                <td>{{ convert_utc_to_local(inventario.data_inicio) }}</td>
+                <td>{{ convert_utc_to_local(inventario.data_fim) if inventario.data_fim else '-' }}</td>
+                <td>{{ inventario.usuario_finalizou.nome if inventario.usuario_finalizou else 'N/A' }}</td>
+                <td>
+                    {% if inventario.status == 'Finalizado' %}
+                        <span class="badge bg-success">{{ inventario.status }}</span>
+                    {% else %}
+                        <span class="badge bg-secondary">{{ inventario.status }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('pagina_detalhe_inventario', inventario_id=inventario.id) }}" class="btn btn-secondary btn-sm">
+                        <i class="bi bi-eye-fill me-2"></i>Ver Detalhes
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center text-muted">Nenhum inventário finalizado ou cancelado encontrado.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

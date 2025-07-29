@@ -1,0 +1,23 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Editar Categoria - Controle Total{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <h1>Editando Categoria</h1>
+    </div>
+    
+    <form action="{{ url_for('salvar_edicao_categoria') }}" method="post">
+        <input type="hidden" name="categoria_id" value="{{ categoria.id }}">
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="nome_categoria" class="form-label">Nome da Categoria:</label>
+                    <input type="text" class="form-control" id="nome_categoria" name="nome_categoria" value="{{ categoria.nome_categoria }}" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                <a href="{{ url_for('pagina_categorias') }}" class="btn btn-secondary">Cancelar</a>
+            </div>
+        </div>
+    </form>
+{% endblock %}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - Controle de Estoque</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; }
+        .login-container { background-color: white; padding: 2em; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h1 { text-align: center; color: #333; }
+        input { padding: 10px; margin: 10px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px; width: 100%; background-color: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        /* Estilos para as mensagens flash */
+        .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; }
+        .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <header>
+            <nav style="display: flex; gap: 15px;">
+                <a href="{{ url_for('pagina_inicial') }}" style="text-decoration: none;">Estoque</a>
+                <a href="{{ url_for('pagina_usuarios') }}" style="text-decoration: none;">Usuários</a>
+                <a href="{{ url_for('pagina_fornecedores') }}" style="text-decoration: none;">Fornecedores</a>
+                <a href="{{ url_for('pagina_categorias') }}" style="text-decoration: none;">Categorias</a>
+            </nav>
+            <div>
+            {% if session.user_name %}
+                <span>Olá, <strong>{{ session.user_name }}</strong>!</span>
+                <a href="{{ url_for('logout') }}" style="text-decoration: none; background-color: #dc3545; color: white; padding: 10px; border-radius: 5px; margin-left: 15px;">Sair</a>
+            {% endif %}
+            </div>
+        </header>
+        <h1>Acessar Sistema</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form action="/login" method="post">
+            <label for="email">E-mail:</label>
+            <input type="email" id="email" name="email" required>
+            
+            <label for="password">Senha:</label>
+            <input type="password" id="password" name="password" required>
+            
+            <button type="submit">Entrar</button>
+        </form>
+    </div>
+</body>
+</html>

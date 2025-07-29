@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Produto</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; background-color: #f9f9f9; }
+        .container { max-width: 600px; margin: auto; background-color: white; padding: 2em; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        form { margin-top: 2em; }
+        input, select, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background-color: #ffc107; color: black; border: none; cursor: pointer; }
+        button:hover { background-color: #e0a800; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav style="display: flex; gap: 15px;">
+                <a href="{{ url_for('pagina_inicial') }}" style="text-decoration: none;">Estoque</a>
+                <a href="{{ url_for('pagina_usuarios') }}" style="text-decoration: none;">Usuários</a>
+                <a href="{{ url_for('pagina_fornecedores') }}" style="text-decoration: none;">Fornecedores</a>
+                <a href="{{ url_for('pagina_categorias') }}" style="text-decoration: none;">Categorias</a>
+            </nav>
+            <div>
+            {% if session.user_name %}
+                <span>Olá, <strong>{{ session.user_name }}</strong>!</span>
+                <a href="{{ url_for('logout') }}" style="text-decoration: none; background-color: #dc3545; color: white; padding: 10px; border-radius: 5px; margin-left: 15px;">Sair</a>
+            {% endif %}
+            </div>
+        </header>
+        <h1>Editando Produto: {{ produto.descricao }}</h1>
+
+        <form action="{{ url_for('salvar_edicao_produto') }}" method="post">
+            <input type="hidden" name="produto_id" value="{{ produto.id }}">
+
+            <label for="codigo_interno">Código Interno:</label>
+            <input type="text" id="codigo_interno" name="codigo_interno" value="{{ produto.codigo_interno }}" required>
+            
+            <label for="descricao">Descrição:</label>
+            <input type="text" id="descricao" name="descricao" value="{{ produto.descricao }}" required>
+
+            <label for="unidade_medida">Unidade de Medida (PC, KG, LT...):</label>
+            <input type="text" id="unidade_medida" name="unidade_medida" value="{{ produto.unidade_medida }}" required>
+            
+            <label for="estoque_minimo">Estoque Mínimo:</label>
+            <input type="number" id="estoque_minimo" name="estoque_minimo" value="{{ produto.estoque_minimo }}" required>
+            
+            <label for="categoria_id">Categoria:</label>
+            <select id="categoria_id" name="categoria_id">
+                {% for categoria in categorias %}
+                    <option value="{{ categoria.id }}" {% if categoria.id == produto.categoria_id %}selected{% endif %}>
+                        {{ categoria.nome_categoria }}
+                    </option>
+                {% endfor %}
+            </select>
+            
+            <button type="submit">Salvar Alterações</button>
+        </form>
+        <a href="{{ url_for('pagina_inicial') }}">Cancelar e voltar</a>
+    </div>
+</body>
+</html>

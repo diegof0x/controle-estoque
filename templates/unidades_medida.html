@@ -1,0 +1,55 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Gerenciar Unidades de Medida - Controle Total{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Gerenciamento de Unidades de Medida</h1>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Adicionar Nova Unidade</div>
+    <div class="card-body">
+        <form action="{{ url_for('adicionar_unidade_medida') }}" method="post">
+            <div class="row">
+                <div class="col-md-8">
+                    <label for="nome_unidade" class="form-label">Nome da Unidade (ex: Peça, Quilograma)</label>
+                    <input type="text" class="form-control" id="nome_unidade" name="nome_unidade" required>
+                </div>
+                <div class="col-md-4">
+                    <label for="sigla" class="form-label">Sigla (ex: PC, KG)</label>
+                    <input type="text" class="form-control" id="sigla" name="sigla" required maxlength="2">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">Adicionar Unidade</button>
+        </form>
+    </div>
+</div>
+
+<h2 class="h3">Unidades Cadastradas</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Nome da Unidade</th>
+                <th>Sigla</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for unidade in unidades %}
+            <tr>
+                <td>{{ unidade.id }}</td>
+                <td>{{ unidade.nome_unidade }}</td>
+                <td>{{ unidade.sigla }}</td>
+                <td>
+                    <a href="#" class="btn btn-secondary btn-sm disabled"><i class="bi bi-pencil-square"></i></a>
+                    <a href="#" class="btn btn-danger btn-sm disabled"><i class="bi bi-trash-fill"></i></a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Posição de Estoque por Período - Controle Total{% endblock %}
+
+{% block head_extra %}
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Posição de Estoque por Período</h1>
+    {% if dados_relatorio is defined and dados_relatorio %}
+    <form action="{{ url_for('exportar_posicao_estoque_csv') }}" method="get">
+        {% for key, value in filtros.items() %}
+            {% if key != 'produtos' and key != 'categorias' %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endif %}
+        {% endfor %}
+        {% for produto_id in filtros.get('produtos', []) %}
+            <input type="hidden" name="produtos" value="{{ produto_id }}">
+        {% endfor %}
+        {% for categoria_id in filtros.get('categorias', []) %}
+            <input type="hidden" name="categorias" value="{{ categoria_id }}">
+        {% endfor %}
+        <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-excel-fill me-2"></i>Exportar para CSV</button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        Filtros de Pesquisa
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('pagina_posicao_estoque') }}" method="get">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="data_inicio" class="form-label">Data Início</label>
+                    <input type="date" class="form-control" id="data_inicio" name="data_inicio" value="{{ filtros.data_inicio }}" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="data_fim" class="form-label">Data Fim</label>
+                    <input type="date" class="form-control" id="data_fim" name="data_fim" value="{{ filtros.data_fim }}" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="ordenar_por" class="form-label">Ordenar por</label>
+                    <select class="form-select" id="ordenar_por" name="ordenar_por">
+                        <option value="descricao" {% if filtros.ordenar_por == 'descricao' %}selected{% endif %}>Descrição</option>
+                        <option value="codigo_interno" {% if filtros.ordenar_por == 'codigo_interno' %}selected{% endif %}>Código</option>
+                        <option value="estoque_final" {% if filtros.ordenar_por == 'estoque_final' %}selected{% endif %}>Maior Estoque Final</option>
+                    </select>
+                </div>
+                <div class="col-md-3"></div>
+                 <div class="col-md-6">
+                    <label for="produtos" class="form-label">Filtrar Produtos (opcional)</label>
+                    <select id="produtos" name="produtos" multiple>
+                        {% for produto in todos_produtos %}
+                        <option value="{{ produto.id }}" {% if produto.id in filtros.produtos|map('int') %}selected{% endif %}>{{ produto.descricao }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="categorias" class="form-label">Filtrar Categorias (opcional)</label>
+                    <select id="categorias" name="categorias" multiple>
+                         {% for categoria in todas_categorias %}
+                        <option value="{{ categoria.id }}" {% if categoria.id in filtros.categorias|map('int') %}selected{% endif %}>{{ categoria.nome_categoria }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">Gerar Relatório</button>
+                <a href="{{ url_for('pagina_posicao_estoque') }}" class="btn btn-secondary">Limpar Filtros</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if dados_relatorio is defined %}
+<div class="table-responsive">
+    <table class="table table-bordered table-sm">
+        <thead class="table-light">
+            <tr>
+                <th rowspan="2" class="align-middle text-center">Produto</th>
+                <th colspan="2" class="text-center">Estoque Inicial</th>
+                <th colspan="2" class="text-center">Entradas</th>
+                <th colspan="2" class="text-center">Saídas</th>
+                <th colspan="2" class="text-center">Estoque Final</th>
+            </tr>
+            <tr>
+                <th class="text-center">Qtd</th>
+                <th class="text-center">Valor (R$)</th>
+                <th class="text-center">Qtd</th>
+                <th class="text-center">Valor (R$)</th>
+                <th class="text-center">Qtd</th>
+                <th class="text-center">Valor (R$)</th>
+                <th class="text-center">Qtd</th>
+                <th class="text-center">Valor (R$)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in dados_relatorio %}
+            <tr>
+                <td>{{ item.descricao }}</td>
+                <td class="text-center">{{ item.qtd_inicial }}</td>
+                <td class="text-center">{{ "R$ {:,.2f}".format(item.valor_inicial|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</td>
+                <td class="text-center">{{ item.qtd_entradas }}</td>
+                <td class="text-center">{{ "R$ {:,.2f}".format(item.valor_entradas|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</td>
+                <td class="text-center">{{ item.qtd_saidas }}</td>
+                <td class="text-center">{{ "R$ {:,.2f}".format(item.valor_saidas|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</td>
+                <td class="text-center"><strong>{{ item.qtd_final }}</strong></td>
+                <td class="text-center"><strong>{{ "R$ {:,.2f}".format(item.valor_final|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="9" class="text-center">Nenhum dado encontrado. Por favor, selecione um período de datas para começar.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        {% if dados_relatorio %}
+        <tfoot class="table-group-divider">
+            <tr>
+                <td class="text-end"><strong>TOTAIS</strong></td>
+                <td class="text-center"><strong>{{ totais.qtd_inicial }}</strong></td>
+                <td class="text-center"><strong>{{ "R$ {:,.2f}".format(totais.valor_inicial|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong></td>
+                <td class="text-center"><strong>{{ totais.qtd_entradas }}</strong></td>
+                <td class="text-center"><strong>{{ "R$ {:,.2f}".format(totais.valor_entradas|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong></td>
+                <td class="text-center"><strong>{{ totais.qtd_saidas }}</strong></td>
+                <td class="text-center"><strong>{{ "R$ {:,.2f}".format(totais.valor_saidas|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong></td>
+                <td class="text-center"><strong>{{ totais.qtd_final }}</strong></td>
+                <td class="text-center"><strong>{{ "R$ {:,.2f}".format(totais.valor_final|float).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong></td>
+            </tr>
+        </tfoot>
+        {% endif %}
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        new TomSelect('#produtos',{plugins: ['remove_button'], placeholder: 'Todos os produtos'});
+        new TomSelect('#categorias',{plugins: ['remove_button'], placeholder: 'Todas as categorias'});
+    });
+</script>
+{% endblock %}

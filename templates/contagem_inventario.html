@@ -1,0 +1,55 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Contagem do Inventário #{{ inventario.id }} - Controle Total{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Contagem do Inventário #{{ inventario.id }}</h1>
+    <div>
+        </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <p class="mb-1"><strong>Iniciado em:</strong> {{ convert_utc_to_local(inventario.data_inicio) }}</p>
+        <p class="mb-0"><strong>Iniciado por:</strong> {{ inventario.usuarios.nome if inventario.usuarios else 'N/A' }}</p>
+    </div>
+</div>
+
+<form action="{{ url_for('salvar_contagem_inventario') }}" method="post">
+    <input type="hidden" name="inventario_id" value="{{ inventario.id }}">
+
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th>Produto</th>
+                    <th class="text-center">Estoque Teórico</th>
+                    <th class="text-center" style="width: 150px;">Quantidade Contada</th>
+                </tr>
+            </thead>
+            tbody>
+                {% for item in itens_inventario %}
+                <tr>
+                    <td>
+                        {{ item.produtos.descricao if item.produtos else 'Produto não encontrado' }}
+                        <small class="d-block text-muted">Cód: {{ item.produtos.codigo_interno if item.produtos }}</small>
+                    </td>
+                    <td class="text-center align-middle">{{ item.quantidade_teorica }}</td>
+                    <td class="text-center align-middle">
+                        <input type="hidden" name="qtd_teorica_{{ item.produto_id }}" value="{{ item.quantidade_teorica }}">
+                        
+                        <input type="number" class="form-control text-center" name="qtd_contada_{{ item.produto_id }}" value="{{ item.quantidade_contada if item.quantidade_contada is not none else '' }}" placeholder="0">
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="text-end mt-3">
+        <a href="{{ url_for('pagina_inventarios_em_andamento') }}" class="btn btn-secondary">Voltar</a>
+        <button type="submit" class="btn btn-success"><i class="bi bi-save-fill me-2"></i>Salvar Progresso</button>
+    </div>
+</form>
+{% endblock %}

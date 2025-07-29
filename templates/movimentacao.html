@@ -1,0 +1,55 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Registrar {{ tipo.title() }}{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <h1>Registrar {{ tipo.title() }} de Estoque</h1>
+    </div>
+    
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">{{ produto.descricao }}</h5>
+            <p class="card-text mb-0"><strong>Código:</strong> {{ produto.codigo_interno }}</p>
+            <p class="card-text"><strong>Estoque Atual:</strong> {{ produto.estoque_atual }}</p>
+        </div>
+    </div>
+
+    <form action="{{ url_for('registrar_movimentacao') }}" method="post" class="mt-4">
+        <input type="hidden" name="produto_id" value="{{ produto.id }}">
+        <input type="hidden" name="tipo" value="{{ tipo }}">
+
+        <div class="mb-3">
+            <label for="quantidade" class="form-label">Quantidade:</label>
+            <input type="number" class="form-control" id="quantidade" name="quantidade" min="1" required>
+        </div>
+
+        {% if tipo == 'entrada' %}
+            <div class="mb-3">
+                <label for="codigo_requisicao_compra" class="form-label">Código de Requisição de Compra (Opcional):</label>
+                <input type="text" class="form-control" id="codigo_requisicao_compra" name="codigo_requisicao_compra">
+            </div>
+
+            <div class="mb-3">
+                <label for="custo_unitario" class="form-label">Custo Unitário (R$):</label>
+                <input type="number" class="form-control" id="custo_unitario" name="custo_unitario" step="0.01" min="0" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="fornecedor_id" class="form-label">Fornecedor:</label>
+                <select class="form-select" id="fornecedor_id" name="fornecedor_id" required>
+                    {% for fornecedor in fornecedores %}
+                        <option value="{{ fornecedor.id }}">{{ fornecedor.razao_social }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% else %} <div class="mb-3">
+                <label for="requisitante_nome" class="form-label">Nome do Requisitante:</label>
+                <input type="text" class="form-control" id="requisitante_nome" name="requisitante_nome" required>
+            </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary">Confirmar {{ tipo.title() }}</button>
+        <a href="{{ url_for('pagina_inicial') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+{% endblock %}
