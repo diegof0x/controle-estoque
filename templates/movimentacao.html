@@ -1,55 +1,108 @@
 {% extends "layout_base.html" %}
 
-{% block title %}Registrar {{ tipo.title() }}{% endblock %}
+{% block title %}
+    {% if tipo == 'entrada' %}
+        Registrar Entrada
+    {% else %}
+        Registrar Saída
+    {% endif %}
+{% endblock %}
 
 {% block content %}
-    <div class="page-header">
-        <h1>Registrar {{ tipo.title() }} de Estoque</h1>
-    </div>
-    
-    <div class="card mb-4">
-        <div class="card-body">
-            <h5 class="card-title">{{ produto.descricao }}</h5>
-            <p class="card-text mb-0"><strong>Código:</strong> {{ produto.codigo_interno }}</p>
-            <p class="card-text"><strong>Estoque Atual:</strong> {{ produto.estoque_atual }}</p>
-        </div>
-    </div>
-
-    <form action="{{ url_for('registrar_movimentacao') }}" method="post" class="mt-4">
-        <input type="hidden" name="produto_id" value="{{ produto.id }}">
-        <input type="hidden" name="tipo" value="{{ tipo }}">
-
-        <div class="mb-3">
-            <label for="quantidade" class="form-label">Quantidade:</label>
-            <input type="number" class="form-control" id="quantidade" name="quantidade" min="1" required>
-        </div>
-
+<div class="page-header">
+    <h1>
         {% if tipo == 'entrada' %}
-            <div class="mb-3">
-                <label for="codigo_requisicao_compra" class="form-label">Código de Requisição de Compra (Opcional):</label>
-                <input type="text" class="form-control" id="codigo_requisicao_compra" name="codigo_requisicao_compra">
-            </div>
+            <i class="bi bi-box-arrow-in-down"></i> Registrar Entrada de Estoque
+        {% else %}
+            <i class="bi bi-box-arrow-up"></i> Registrar Saída de Estoque
+        {% endif %}
+    </h1>
+</div>
 
-            <div class="mb-3">
-                <label for="custo_unitario" class="form-label">Custo Unitário (R$):</label>
-                <input type="number" class="form-control" id="custo_unitario" name="custo_unitario" step="0.01" min="0" required>
+<div class="card">
+    <div class="card-header">
+        <strong>Produto:</strong> {{ produto.descricao }} | <strong>Estoque Atual:</strong> {{ produto.estoque_atual }}
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('registrar_movimentacao') }}" method="post">
+            <input type="hidden" name="produto_id" value="{{ produto.id }}">
+            <input type="hidden" name="tipo" value="{{ tipo }}">
+
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label for="quantidade" class="form-label">Quantidade</label>
+                    <input type="number" step="0.01" class="form-control" id="quantidade" name="quantidade" required>
+                </div>
             </div>
             
-            <div class="mb-3">
-                <label for="fornecedor_id" class="form-label">Fornecedor:</label>
-                <select class="form-select" id="fornecedor_id" name="fornecedor_id" required>
-                    {% for fornecedor in fornecedores %}
-                        <option value="{{ fornecedor.id }}">{{ fornecedor.razao_social }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        {% else %} <div class="mb-3">
-                <label for="requisitante_nome" class="form-label">Nome do Requisitante:</label>
-                <input type="text" class="form-control" id="requisitante_nome" name="requisitante_nome" required>
-            </div>
-        {% endif %}
+            <hr>
 
-        <button type="submit" class="btn btn-primary">Confirmar {{ tipo.title() }}</button>
-        <a href="{{ url_for('pagina_inicial') }}" class="btn btn-secondary">Cancelar</a>
-    </form>
+            {% if tipo == 'entrada' %}
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="preco_unitario" class="form-label">Custo Unitário (R$)</label>
+                    <input type="number" step="0.01" class="form-control" id="preco_unitario" name="preco_unitario" value="0.00" required>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="fornecedor_id" class="form-label">Fornecedor</label>
+                    <select class="form-select" id="fornecedor_id" name="fornecedor_id" required>
+                        <option value="" disabled selected>Selecione...</option>
+                        {% for fornecedor in fornecedores %}
+                        <option value="{{ fornecedor.id }}">{{ fornecedor.nome_fornecedor }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                 <div class="col-md-4 mb-3">
+                    <label for="numero_requisicao_alvo" class="form-label">Nº Requisição (ALVO)</label>
+                    <input type="text" class="form-control" id="numero_requisicao_alvo" name="numero_requisicao_alvo">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="tipo_documento" class="form-label">Tipo de Documento</label>
+                    <select class="form-select" id="tipo_documento" name="tipo_documento">
+                        <option value="Nota Fiscal" selected>Nota Fiscal</option>
+                        <option value="Documento">Documento</option>
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="numero_documento" class="form-label">Número NF/Documento</label>
+                    <input type="text" class="form-control" id="numero_documento" name="numero_documento" value="0">
+                </div>
+            </div>
+
+            {% else %}
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="colaborador_id" class="form-label">Requisitante (Colaborador)</label>
+                    <select class="form-select" id="colaborador_id" name="colaborador_id" required>
+                        <option value="" disabled selected>Selecione...</option>
+                        {% for colaborador in colaboradores %}
+                        <option value="{{ colaborador.id }}">{{ colaborador.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="equipamento_id" class="form-label">Vincular a Equipamento (Opcional)</label>
+                    <select class="form-select" id="equipamento_id" name="equipamento_id">
+                        <option value="">Nenhum</option>
+                        {% for equipamento in equipamentos %}
+                        <option value="{{ equipamento.id }}">{{ equipamento.codigo_identificador }} - {{ equipamento.descricao }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="numero_requisicao_manual" class="form-label">Nº Requisição Manual (Opcional)</label>
+                    <input type="text" class="form-control" id="numero_requisicao_manual" name="numero_requisicao_manual">
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary">Registrar</button>
+                <a href="{{ url_for('pagina_estoque') }}" class="btn btn-secondary">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}

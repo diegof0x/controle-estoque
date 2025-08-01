@@ -8,6 +8,19 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
+# Função para formatar a data no padrão brasileiro para os templates
+def format_datetime_filter(value):
+    if value is None:
+        return ""
+    try:
+        # Converte a string de data ISO do Supabase para um objeto datetime
+        dt_object = datetime.fromisoformat(value)
+        # Formata o objeto datetime para o nosso padrão
+        return dt_object.strftime('%d/%m/%Y %H:%M')
+    except (ValueError, TypeError):
+        # Se o valor não for uma data válida, retorna o original sem quebrar a página
+        return value
+
 # --- Bloco de Conexão com Supabase ---
 SUPABASE_URL = "https://bblwsqlelbrhotnnxxxt.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibHdzcWxlbGJyaG90bm54eHh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzODQ2ODUsImV4cCI6MjA2ODk2MDY4NX0.dwW0UQdiGD16TDbP-hAYK3CAg1UbboxUKw-fhH3_shA"
@@ -21,6 +34,7 @@ except Exception as e:
 
 # --- Inicialização do App Flask ---
 app = Flask(__name__)
+app.jinja_env.filters['format_datetime'] = format_datetime_filter
 app.secret_key = 'PAPADINHAEROIAMASTER'
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['TEMPLATES_AUTO_RELOAD'] = True
@@ -59,21 +73,33 @@ def utility_processor():
 # --- ROTAS DE AUTENTICAÇÃO ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if 'user_id' in session:
+        return redirect(url_for('pagina_inicial'))
+
     if request.method == 'POST':
         email = request.form['email']
-        senha = request.form['password']
-        response = supabase.table('usuarios').select('*').eq('email', email).limit(1).single().execute()
+        senha = request.form['senha']
+        
+        # CORREÇÃO 1: A consulta agora busca o nome da função na tabela relacionada 'funcoes'
+        response = supabase.table('usuarios').select('*, funcoes(nome_funcao)').eq('email', email).single().execute()
         user = response.data
-        if user and check_password_hash(user['senha'], senha): # <-- CORRIGIDO E SEGURO
-    # ... código de login ...
+        
+        if user and check_password_hash(user['senha'], senha):
             session['user_id'] = user['id']
             session['user_name'] = user['nome']
-            session['user_role'] = user['role']
-            flash('Login realizado com sucesso!', 'success')
+            
+            # CORREÇÃO 2: Acessamos o nome da função da nova forma e o salvamos na sessão
+            # Verificamos se a relação 'funcoes' não é nula antes de acessá-la
+            if user.get('funcoes'):
+                # Adicionamos .lower() para manter o padrão 'gestor' em minúsculo que o resto do sistema espera
+                session['user_role'] = user['funcoes']['nome_funcao'].lower()
+            else:
+                session['user_role'] = 'desconhecido' # Um valor padrão para evitar erros
+
             return redirect(url_for('pagina_inicial'))
         else:
             flash('E-mail ou senha inválidos.', 'danger')
-            return redirect(url_for('login'))
+    
     return render_template('login.html')
 
 @app.route('/logout')
@@ -386,117 +412,278 @@ def pagina_inicial():
 def pagina_estoque():
     if 'user_id' not in session: return redirect(url_for('login'))
     
+    # Busca de dados principais
     response_produtos = supabase.table('produtos').select('*, categorias(nome_categoria)').order('id').execute()
-    produtos = response_produtos.data
+    produtos_data = response_produtos.data
     
-    response_categorias = supabase.table('categorias').select('*').order('nome_categoria').execute()
-    categorias = response_categorias.data
+    # Loop para calcular custo médio e valor total para cada produto
+    for produto in produtos_data:
+        quantidade_com_custo = float(produto.get('quantidade_com_custo') or 0)
+        valor_total_estoque = float(produto.get('valor_total_estoque') or 0)
+        
+        if quantidade_com_custo > 0:
+            produto['custo_medio'] = valor_total_estoque / quantidade_com_custo
+        else:
+            produto['custo_medio'] = 0
+            
+        produto['valor_total_calculado'] = produto['custo_medio'] * float(produto.get('estoque_atual') or 0)
 
-    return render_template('estoque.html', produtos=produtos, categorias=categorias)
+    # Buscas para os formulários da página
+    response_categorias = supabase.table('categorias').select('*').execute()
+    categorias = response_categorias.data
+    response_unidades = supabase.table('unidades_medida').select('*').execute()
+    unidades_medida = response_unidades.data
+    
+    return render_template('estoque.html', produtos=produtos_data, categorias=categorias, unidades_medida=unidades_medida)
 
 @app.route('/adicionar', methods=['POST'])
+@app.route('/produtos/adicionar', methods=['POST'])
 def adicionar_produto():
     if 'user_id' not in session: return redirect(url_for('login'))
-    
-    # Padroniza os campos de texto antes de criar o dicionário
-    codigo_interno_padronizado = padronizar_texto(request.form['codigo_interno'])
-    descricao_padronizada = padronizar_texto(request.form['descricao'])
-    unidade_medida_padronizada = padronizar_texto(request.form['unidade_medida'])
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_estoque'))
 
-    dados_produto = { 
-        'codigo_interno': codigo_interno_padronizado,
-        'descricao': descricao_padronizada,
-        'unidade_medida': unidade_medida_padronizada,
-        'estoque_minimo': request.form['estoque_minimo'], 
-        'categoria_id': request.form['categoria_id'] 
-    }
     try:
-        # Verifica a duplicidade usando o código já padronizado
-        response_check = supabase.table('produtos').select('id').eq('codigo_interno', codigo_interno_padronizado).execute()
-        if response_check.data:
-            flash(f'Erro: O Código Interno "{codigo_interno_padronizado}" já existe no sistema.', 'danger')
-            return redirect(url_for('pagina_estoque'))
-
-        supabase.table('produtos').insert(dados_produto).execute()
+        dados_novo_produto = {
+            'descricao': padronizar_texto(request.form['descricao']),
+            'categoria_id': int(request.form['categoria_id']),
+            'codigo_sustentare': request.form.get('codigo_sustentare', '0'),
+            'codigo_valor': request.form.get('codigo_valor', '0'),
+            'unidade_medida_id': int(request.form['unidade_medida_id']),
+            'estoque_atual': 0,
+            'estoque_minimo': 0,
+            'valor_total_estoque': 0,
+            'quantidade_com_custo': 0
+        }
+        supabase.table('produtos').insert(dados_novo_produto).execute()
         flash('Produto cadastrado com sucesso!', 'success')
     except Exception as e:
         flash(f'Erro ao cadastrar produto: {e}', 'danger')
-    
+
     return redirect(url_for('pagina_estoque'))
 
 @app.route('/movimentacao/<int:produto_id>/<tipo>')
 def pagina_movimentacao(produto_id, tipo):
     if 'user_id' not in session: return redirect(url_for('login'))
-    response_produto = supabase.table('produtos').select('*').eq('id', produto_id).limit(1).single().execute()
+
+    # Busca o produto específico para exibir o nome na tela
+    response_produto = supabase.table('produtos').select('*').eq('id', produto_id).single().execute()
     produto = response_produto.data
-    fornecedores = []
-    if tipo == 'entrada':
-        response_fornecedores = supabase.table('fornecedores').select('*').order('razao_social').execute()
-        fornecedores = response_fornecedores.data
-    return render_template('movimentacao.html', produto=produto, tipo=tipo, fornecedores=fornecedores)
+    
+    # Busca as listas necessárias para os dropdowns dos formulários
+    fornecedores = supabase.table('fornecedores').select('*').execute().data
+    colaboradores = supabase.table('colaboradores').select('*').execute().data
+    equipamentos = supabase.table('equipamentos').select('*').execute().data
+
+    return render_template('movimentacao.html', produto=produto, tipo=tipo, fornecedores=fornecedores, colaboradores=colaboradores, equipamentos=equipamentos)
 
 @app.route('/registrar_movimentacao', methods=['POST'])
 def registrar_movimentacao():
     if 'user_id' not in session: return redirect(url_for('login'))
     
+    # --- 1. Captura de Dados Comuns do Formulário ---
     tipo = request.form['tipo']
     produto_id = int(request.form['produto_id'])
-    quantidade_movimentada = int(request.form.get('quantidade', 0))
+    quantidade_movimentada = float(request.form.get('quantidade', 0))
 
     if quantidade_movimentada <= 0:
         flash('Erro: A quantidade da movimentação deve ser maior que zero.', 'danger')
         return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
     
+    # --- 2. Busca os dados atuais do produto ---
+    try:
+        response_produto = supabase.table('produtos').select('estoque_atual, valor_total_estoque, quantidade_com_custo').eq('id', produto_id).limit(1).single().execute()
+        produto_atual = response_produto.data
+        if not produto_atual:
+            flash(f'Erro: Produto com ID {produto_id} não encontrado.', 'danger')
+            return redirect(url_for('pagina_estoque'))
+    except Exception as e:
+        flash(f'Erro ao buscar dados do produto: {e}', 'danger')
+        return redirect(url_for('pagina_estoque'))
+
+    estoque_antigo = float(produto_atual.get('estoque_atual', 0))
+    valor_total_antigo = float(produto_atual.get('valor_total_estoque', 0))
+    quantidade_com_custo_antiga = float(produto_atual.get('quantidade_com_custo', 0))
+
+    dados_movimentacao = { 'produto_id': produto_id, 'tipo': tipo, 'quantidade': quantidade_movimentada, 'usuario_id': session['user_id'] }
+    dados_produto_update = {}
+
+    # --- 3. Lógica para ENTRADA ---
     if tipo == 'entrada':
+        # Captura os dados específicos da entrada
         custo_unitario_entrada = float(request.form.get('custo_unitario', 0))
+        numero_requisicao_alvo = request.form.get('numero_requisicao_alvo', '').strip().upper()
+
         if custo_unitario_entrada < 0:
             flash('Erro: O custo unitário não pode ser um valor negativo.', 'danger')
             return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
-    response_produto = supabase.table('produtos').select('estoque_atual, valor_total_estoque, quantidade_com_custo').eq('id', produto_id).limit(1).single().execute()
-    produto_atual = response_produto.data
-    estoque_antigo = float(produto_atual['estoque_atual'])
-    valor_total_antigo = float(produto_atual['valor_total_estoque'])
-    quantidade_com_custo_antiga = float(produto_atual['quantidade_com_custo'])
-    dados_movimentacao = { 'produto_id': produto_id, 'tipo': tipo, 'quantidade': quantidade_movimentada, 'usuario_id': session['user_id'] }
-    dados_produto_update = {}
-    if tipo == 'entrada':
-        novo_estoque = estoque_antigo + quantidade_movimentada
-        custo_unitario_entrada = float(request.form['custo_unitario'])
-        dados_movimentacao['custo_unitario'] = custo_unitario_entrada
+
+        # Prepara os dados da movimentação de entrada com os novos campos
+        dados_movimentacao['preco_unitario'] = custo_unitario_entrada
         dados_movimentacao['fornecedor_id'] = int(request.form['fornecedor_id'])
-        dados_movimentacao['codigo_requisicao_compra'] = request.form.get('codigo_requisicao_compra')
+        dados_movimentacao['numero_requisicao_alvo'] = numero_requisicao_alvo
+        dados_movimentacao['tipo_documento'] = request.form.get('tipo_documento')
+        dados_movimentacao['numero_documento'] = request.form.get('numero_documento', '0')
+        
+        # Calcula os novos totais do produto
+        novo_estoque = estoque_antigo + quantidade_movimentada
         novo_valor_total = valor_total_antigo
         nova_quantidade_com_custo = quantidade_com_custo_antiga
         if custo_unitario_entrada > 0:
             novo_valor_total += quantidade_movimentada * custo_unitario_entrada
             nova_quantidade_com_custo += quantidade_movimentada
         dados_produto_update = { 'estoque_atual': novo_estoque, 'valor_total_estoque': novo_valor_total, 'quantidade_com_custo': nova_quantidade_com_custo }
+        
+        # Salva a movimentação e atualiza o produto
+        supabase.table('movimentacoes').insert(dados_movimentacao).execute()
+        supabase.table('produtos').update(dados_produto_update).eq('id', produto_id).execute()
+
+       # === INÍCIO DA LÓGICA DE BAIXA AUTOMÁTICA (VERSÃO ROBUSTA) ===
+    # === INÍCIO DA LÓGICA DE BAIXA EM CASCATA (VERSÃO AVANÇADA) ===
+    if numero_requisicao_alvo:
+        try:
+            # 1. Busca TODOS os usos pendentes para este alvo/produto, em ordem do mais antigo para o mais novo
+            usos_pendentes_response = supabase.table('uso_temporario').select('*').eq('numero_requisicao_alvo', numero_requisicao_alvo).eq('produto_id', produto_id).in_('status', ['Pendente', 'Baixado Parcialmente']).order('id').execute()
+            usos_pendentes = usos_pendentes_response.data
+            
+            saldo_entrada = quantidade_movimentada # Nosso "crédito" para abater as pendências
+            
+            # 2. Faz um loop por cada pendência encontrada
+            for uso in usos_pendentes:
+                if saldo_entrada <= 0:
+                    break # Se o crédito acabou, paramos o loop
+
+                quantidade_pendente = float(uso['quantidade_usada'])
+                dados_atualizacao_uso = {}
+
+                if saldo_entrada >= quantidade_pendente:
+                    # O crédito é suficiente para quitar esta pendência inteira
+                    dados_atualizacao_uso['status'] = 'Baixado'
+                    dados_atualizacao_uso['quantidade_usada'] = 0
+                    saldo_entrada -= quantidade_pendente # Subtrai o que foi usado do nosso crédito
+                    flash(f'Uso temporário ID {uso["id"]} ({quantidade_pendente} un.) baixado integralmente.', 'info')
+                else:
+                    # O crédito só quita parte desta pendência
+                    nova_quantidade_pendente = quantidade_pendente - saldo_entrada
+                    dados_atualizacao_uso['status'] = 'Baixado Parcialmente'
+                    dados_atualizacao_uso['quantidade_usada'] = nova_quantidade_pendente
+                    saldo_entrada = 0 # O crédito foi todo utilizado
+                    flash(f'Uso temporário ID {uso["id"]} baixado parcialmente. Restam {nova_quantidade_pendente} un. pendentes.', 'info')
+                
+                # Atualiza o registro no banco de dados
+                supabase.table('uso_temporario').update(dados_atualizacao_uso).eq('id', uso['id']).execute()
+
+        except Exception as e:
+            print(f"DEBUG: Não foi possível realizar a baixa automática para o ALVO {numero_requisicao_alvo}. Erro: {e}")
+    # === FIM DA LÓGICA DE BAIXA EM CASCATA ===
+        
         flash('Entrada registrada com sucesso!', 'success')
+
+    # --- 4. Lógica para SAÍDA ---
     else: # Saída
+        if estoque_antigo < quantidade_movimentada:
+            flash(f'Erro: Quantidade de saída ({quantidade_movimentada}) é maior que o estoque atual ({estoque_antigo}).', 'danger')
+            return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
+
+        # Prepara os dados da movimentação de saída com os novos campos
         custo_medio_atual = valor_total_antigo / quantidade_com_custo_antiga if quantidade_com_custo_antiga > 0 else 0
+        dados_movimentacao['custo_unitario'] = custo_medio_atual # Salva o custo médio no momento da saída
+        dados_movimentacao['colaborador_id'] = request.form.get('colaborador_id')
+        dados_movimentacao['equipamento_id'] = request.form.get('equipamento_id')
+        dados_movimentacao['numero_requisicao_manual'] = request.form.get('numero_requisicao_manual')
+
+        # Calcula os novos totais do produto
         novo_estoque = estoque_antigo - quantidade_movimentada
         novo_valor_total = valor_total_antigo - (quantidade_movimentada * custo_medio_atual)
-        nova_quantidade_com_custo = quantidade_com_custo_antiga - quantidade_movimentada
-        dados_produto_update = { 'estoque_atual': max(0, novo_estoque), 'valor_total_estoque': max(0, novo_valor_total), 'quantidade_com_custo': max(0, nova_quantidade_com_custo) }
-        dados_movimentacao['requisitante_nome'] = request.form['requisitante_nome']
-        flash('Saída registrada com sucesso!', 'info')
-    supabase.table('movimentacoes').insert(dados_movimentacao).execute()
-    supabase.table('produtos').update(dados_produto_update).eq('id', produto_id).execute()
+        nova_quantidade_com_custo = quantidade_com_custo_antiga # Na saída, a quantidade base do custo médio não muda
+        
+        dados_produto_update = { 'estoque_atual': max(0, novo_estoque), 'valor_total_estoque': max(0, novo_valor_total), 'quantidade_com_custo': nova_quantidade_com_custo }
+
+        # Salva a movimentação e atualiza o produto
+        supabase.table('movimentacoes').insert(dados_movimentacao).execute()
+        supabase.table('produtos').update(dados_produto_update).eq('id', produto_id).execute()
+
+        flash('Saída registrada com sucesso!', 'success')
+    
     return redirect(url_for('pagina_estoque'))
 
-@app.route('/produto/editar/<int:produto_id>')
+@app.route('/produtos/editar/<int:produto_id>')
 def pagina_editar_produto(produto_id):
+    # --- MARCADOR DE DEPURAÇÃO 1 ---
+    print("\n--- EXECUTANDO A NOVA VERSÃO DA FUNÇÃO 'pagina_editar_produto' (COM PRINTS) ---")
+
     if 'user_id' not in session: return redirect(url_for('login'))
-    response_produto = supabase.table('produtos').select('*').eq('id', produto_id).limit(1).single().execute()
-    produto = response_produto.data
-    response_categorias = supabase.table('categorias').select('*').order('nome_categoria').execute().data
-    return render_template('editar_produto.html', produto=produto, categorias=categorias)
+
+    try:
+        # --- MARCADOR DE DEPURAÇÃO 2 ---
+        print(f"--- PASSO 2: Buscando produto com ID: {produto_id}")
+        response_produto = supabase.table('produtos').select('*').eq('id', produto_id).single().execute()
+        produto = response_produto.data
+        
+        if not produto:
+            flash('Produto não encontrado.', 'danger')
+            return redirect(url_for('pagina_estoque'))
+
+        # --- MARCADOR DE DEPURAÇÃO 3 ---
+        print("--- PASSO 3: Buscando a lista de categorias...")
+        response_categorias = supabase.table('categorias').select('*').execute()
+        categorias = response_categorias.data
+        
+        # --- MARCADOR DE DEPURAÇÃO 4 ---
+        print("--- PASSO 4: Buscando a lista de unidades_medida (o nome correto)...")
+        response_unidades = supabase.table('unidades_medida').select('*').execute()
+        unidades_medida = response_unidades.data
+        
+        # --- MARCADOR DE DEPURAÇÃO 5 ---
+        print("--- PASSO 5: Todos os dados foram buscados com sucesso. Renderizando o template...")
+        return render_template('editar_produto.html', produto=produto, categorias=categorias, unidades_medida=unidades_medida)
+    
+    except Exception as e:
+        # --- MARCADOR DE DEPURAÇÃO 6 ---
+        print(f"\n!!! ERRO CAPTURADO DENTRO DA FUNÇÃO NOVA: {e} !!!\n")
+        flash(f'Erro ao carregar dados do produto: {e}', 'danger')
+        return redirect(url_for('pagina_estoque'))
+    
+@app.route('/produtos/editar', methods=['POST'])
+def editar_produto():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_estoque'))
+
+    # Lógica de receber dados do formulário e salvar
+    try:
+        produto_id = request.form['produto_id']
+        dados_atualizados = {
+            'descricao': padronizar_texto(request.form['descricao']),
+            'categoria_id': int(request.form['categoria_id']),
+            'codigo_sustentare': request.form.get('codigo_sustentare', '0'),
+            'codigo_valor': request.form.get('codigo_valor', '0'),
+            'unidade_medida_id': int(request.form['unidade_medida_id'])
+        }
+        supabase.table('produtos').update(dados_atualizados).eq('id', produto_id).execute()
+        flash('Produto atualizado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao atualizar produto: {e}', 'danger')
+
+    return redirect(url_for('pagina_estoque'))
+    
+    try:
+        # Para evitar erros de chave estrangeira, excluímos primeiro os registros dependentes
+        supabase.table('movimentacoes').delete().eq('produto_id', produto_id).execute()
+        supabase.table('inventario_itens').delete().eq('produto_id', produto_id).execute()
+        supabase.table('uso_temporario').delete().eq('produto_id', produto_id).execute()
+        
+        # Agora podemos excluir o produto principal
+        supabase.table('produtos').delete().eq('id', produto_id).execute()
+        flash('Produto e todo o seu histórico foram excluídos com sucesso!', 'warning')
+    except Exception as e:
+        flash(f'Erro ao excluir produto: {e}', 'danger')
+
+    return redirect(url_for('pagina_estoque'))
 
 @app.route('/produto/salvar_edicao', methods=['POST'])
 def salvar_edicao_produto():
     if 'user_id' not in session: return redirect(url_for('login'))
     produto_id = request.form['produto_id']
-    dados_para_atualizar = { 'codigo_interno': request.form['codigo_interno'], 'descricao': request.form['descricao'], 'unidade_medida': request.form['unidade_medida'], 'estoque_minimo': request.form['estoque_minimo'], 'categoria_id': request.form['categoria_id'] }
+    dados_para_atualizar = { 'codigo_sustentare': request.form['codigo_sustentare'], 'descricao': request.form['descricao'], 'unidade_medida': request.form['unidade_medida'], 'estoque_minimo': request.form['estoque_minimo'], 'categoria_id': request.form['categoria_id'] }
     supabase.table('produtos').update(dados_para_atualizar).eq('id', produto_id).execute()
     flash('Produto atualizado com sucesso!', 'success')
     return redirect(url_for('pagina_estoque'))
@@ -575,7 +762,7 @@ def pagina_posicao_estoque():
     dados_relatorio = []
     totais = {}
     if filtros['data_inicio'] and filtros['data_fim']:
-        query_produtos = supabase.table('produtos').select('id, descricao, codigo_interno, categoria_id')
+        query_produtos = supabase.table('produtos').select('id, descricao, codigo_sustentare, categoria_id')
         if filtros['produtos']:
             query_produtos = query_produtos.in_('id', [int(p) for p in filtros['produtos']])
         if filtros['categorias']:
@@ -585,7 +772,7 @@ def pagina_posicao_estoque():
         if ids_produtos:
             todas_movimentacoes = supabase.table('movimentacoes').select('produto_id, tipo, quantidade, custo_unitario, data').in_('produto_id', ids_produtos).lte('data', f"{filtros['data_fim']} 23:59:59").execute().data
             produtos_map = {p['id']: p for p in produtos_a_analisar}
-            relatorio_map = { p_id: {'id': p_id, 'descricao': produtos_map[p_id]['descricao'], 'codigo_interno': produtos_map[p_id]['codigo_interno'], 'qtd_inicial': 0, 'valor_inicial': 0, 'qtd_entradas': 0, 'valor_entradas': 0, 'qtd_saidas': 0, 'valor_saidas': 0, 'qtd_final': 0, 'valor_final': 0} for p_id in ids_produtos }
+            relatorio_map = { p_id: {'id': p_id, 'descricao': produtos_map[p_id]['descricao'], 'codigo_sustentare': produtos_map[p_id]['codigo_sustentare'], 'qtd_inicial': 0, 'valor_inicial': 0, 'qtd_entradas': 0, 'valor_entradas': 0, 'qtd_saidas': 0, 'valor_saidas': 0, 'qtd_final': 0, 'valor_final': 0} for p_id in ids_produtos }
             data_inicio_dt = datetime.fromisoformat(f"{filtros['data_inicio']}T00:00:00+00:00").replace(tzinfo=timezone.utc)
             for mov in todas_movimentacoes:
                 p_id = mov['produto_id']
@@ -611,8 +798,8 @@ def pagina_posicao_estoque():
                 item['valor_saidas'] = item['qtd_saidas'] * custo_medio_inicial
                 item['valor_final'] = item['valor_inicial'] + item['valor_entradas'] - item['valor_saidas']
                 dados_relatorio.append(item)
-            if filtros['ordenar_por'] == 'codigo_interno':
-                dados_relatorio.sort(key=lambda x: x['codigo_interno'])
+            if filtros['ordenar_por'] == 'codigo_sustentare':
+                dados_relatorio.sort(key=lambda x: x['codigo_sustentare'])
             elif filtros['ordenar_por'] == 'estoque_final':
                 dados_relatorio.sort(key=lambda x: x['qtd_final'], reverse=True)
             else:
@@ -631,7 +818,7 @@ def exportar_posicao_estoque_csv():
     if not (filtros['data_inicio'] and filtros['data_fim']):
         flash('Datas são obrigatórias para exportar.', 'danger')
         return redirect(url_for('pagina_posicao_estoque'))
-    query_produtos = supabase.table('produtos').select('id, descricao, codigo_interno, categoria_id')
+    query_produtos = supabase.table('produtos').select('id, descricao, codigo_sustentare, categoria_id')
     if filtros['produtos']:
         query_produtos = query_produtos.in_('id', [int(p) for p in filtros['produtos']])
     if filtros['categorias']:
@@ -641,7 +828,7 @@ def exportar_posicao_estoque_csv():
     if ids_produtos:
         todas_movimentacoes = supabase.table('movimentacoes').select('produto_id, tipo, quantidade, custo_unitario, data').in_('produto_id', ids_produtos).lte('data', f"{filtros['data_fim']} 23:59:59").execute().data
         produtos_map = {p['id']: p for p in produtos_a_analisar}
-        relatorio_map = { p_id: {'id': p_id, 'descricao': produtos_map[p_id]['descricao'], 'codigo_interno': produtos_map[p_id]['codigo_interno'], 'qtd_inicial': 0, 'valor_inicial': 0, 'qtd_entradas': 0, 'valor_entradas': 0, 'qtd_saidas': 0, 'valor_saidas': 0, 'qtd_final': 0, 'valor_final': 0} for p_id in ids_produtos }
+        relatorio_map = { p_id: {'id': p_id, 'descricao': produtos_map[p_id]['descricao'], 'codigo_sustentare': produtos_map[p_id]['codigo_sustentare'], 'qtd_inicial': 0, 'valor_inicial': 0, 'qtd_entradas': 0, 'valor_entradas': 0, 'qtd_saidas': 0, 'valor_saidas': 0, 'qtd_final': 0, 'valor_final': 0} for p_id in ids_produtos }
         data_inicio_dt = datetime.fromisoformat(f"{filtros['data_inicio']}T00:00:00+00:00").replace(tzinfo=timezone.utc)
         for mov in todas_movimentacoes:
             p_id = mov['produto_id']
@@ -684,7 +871,7 @@ def pagina_iniciar_inventario():
     
     # Busca todos os produtos para a tela de seleção
     try:
-        response = supabase.table('produtos').select('id, codigo_interno, descricao').order('descricao').execute()
+        response = supabase.table('produtos').select('id, codigo_sustentare, descricao').order('descricao').execute()
         todos_produtos = response.data
     except Exception as e:
         flash(f"Erro ao carregar produtos: {e}", "danger")
@@ -983,7 +1170,7 @@ def exportar_relatorio_inventario_csv():
 
             writer.writerow([
                 produto.get('id', 'N/A'),
-                produto.get('codigo_interno', 'N/A'),
+                produto.get('codigo_sustentare', 'N/A'),
                 produto.get('descricao', 'N/A'),
                 qtd_teorica,
                 qtd_contada if qtd_contada is not None else 'NÃO CONTADO',
@@ -1036,7 +1223,7 @@ def exportar_detalhe_inventario_csv():
 
             writer.writerow([
                 produto.get('id', 'N/A'),
-                produto.get('codigo_interno', 'N/A'),
+                produto.get('codigo_sustentare', 'N/A'),
                 produto.get('descricao', 'N/A'),
                 qtd_teorica,
                 qtd_contada if qtd_contada is not None else 'NÃO CONTADO',
@@ -1054,6 +1241,188 @@ def exportar_detalhe_inventario_csv():
     except Exception as e:
         flash(f'Erro ao gerar o relatório CSV: {e}', 'danger')
         return redirect(url_for('pagina_detalhe_inventario', inventario_id=inventario_id))
+
+# ===== ROTAS PARA GERENCIAMENTO DE EQUIPAMENTOS =====
+
+@app.route('/equipamentos')
+def pagina_equipamentos():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor':
+        flash('Acesso negado: você não tem permissão para esta área.', 'danger')
+        return redirect(url_for('pagina_inicial'))
+        
+    response = supabase.table('equipamentos').select('*').order('id').execute()
+    equipamentos = response.data
+    return render_template('equipamentos.html', equipamentos=equipamentos)
+
+@app.route('/equipamentos/adicionar', methods=['POST'])
+def adicionar_equipamento():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    dados_novo_equipamento = {
+        'codigo_identificador': request.form['codigo_identificador'].strip().upper(),
+        'descricao': padronizar_texto(request.form['descricao'])
+    }
+    try:
+        supabase.table('equipamentos').insert(dados_novo_equipamento).execute()
+        flash('Equipamento adicionado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao adicionar equipamento: {e}', 'danger')
+    return redirect(url_for('pagina_equipamentos'))
+
+@app.route('/equipamentos/excluir/<int:equipamento_id>', methods=['POST'])
+def excluir_equipamento(equipamento_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    try:
+        supabase.table('equipamentos').delete().eq('id', equipamento_id).execute()
+        flash('Equipamento excluído com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao excluir equipamento: {e}', 'danger')
+    return redirect(url_for('pagina_equipamentos'))
+
+@app.route('/equipamentos/editar/<int:equipamento_id>')
+def pagina_editar_equipamento(equipamento_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    response = supabase.table('equipamentos').select('*').eq('id', equipamento_id).single().execute()
+    equipamento = response.data
+    return render_template('editar_equipamento.html', equipamento=equipamento)
+
+@app.route('/equipamentos/editar', methods=['POST'])
+def editar_equipamento():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    equipamento_id = request.form['equipamento_id']
+    dados_atualizados = {
+        'codigo_identificador': request.form['codigo_identificador'].strip().upper(),
+        'descricao': padronizar_texto(request.form['descricao'])
+    }
+    try:
+        supabase.table('equipamentos').update(dados_atualizados).eq('id', equipamento_id).execute()
+        flash('Equipamento atualizado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao atualizar equipamento: {e}', 'danger')
+    return redirect(url_for('pagina_equipamentos'))
+
+# ===== ROTAS PARA GERENCIAMENTO DE COLABORADORES =====
+
+@app.route('/colaboradores')
+def pagina_colaboradores():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor':
+        flash('Acesso negado: você não tem permissão para esta área.', 'danger')
+        return redirect(url_for('pagina_inicial'))
+        
+    response = supabase.table('colaboradores').select('*').order('id').execute()
+    colaboradores = response.data
+    return render_template('colaboradores.html', colaboradores=colaboradores)
+
+@app.route('/colaboradores/adicionar', methods=['POST'])
+def adicionar_colaborador():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    dados_novo_colaborador = {
+        'nome': padronizar_texto(request.form['nome']),
+        'cargo': padronizar_texto(request.form['cargo']),
+        'setor': padronizar_texto(request.form['setor'])
+    }
+    try:
+        supabase.table('colaboradores').insert(dados_novo_colaborador).execute()
+        flash('Colaborador adicionado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao adicionar colaborador: {e}', 'danger')
+    return redirect(url_for('pagina_colaboradores'))
+
+@app.route('/colaboradores/excluir/<int:colaborador_id>', methods=['POST'])
+def excluir_colaborador(colaborador_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    try:
+        supabase.table('colaboradores').delete().eq('id', colaborador_id).execute()
+        flash('Colaborador excluído com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao excluir colaborador: {e}', 'danger')
+    return redirect(url_for('pagina_colaboradores'))
+
+@app.route('/colaboradores/editar/<int:colaborador_id>')
+def pagina_editar_colaborador(colaborador_id):
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    response = supabase.table('colaboradores').select('*').eq('id', colaborador_id).single().execute()
+    colaborador = response.data
+    return render_template('editar_colaborador.html', colaborador=colaborador)
+
+@app.route('/colaboradores/editar', methods=['POST'])
+def editar_colaborador():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    colaborador_id = request.form['colaborador_id']
+    dados_atualizados = {
+        'nome': padronizar_texto(request.form['nome']),
+        'cargo': padronizar_texto(request.form['cargo']),
+        'setor': padronizar_texto(request.form['setor'])
+    }
+    try:
+        supabase.table('colaboradores').update(dados_atualizados).eq('id', colaborador_id).execute()
+        flash('Colaborador atualizado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao atualizar colaborador: {e}', 'danger')
+    return redirect(url_for('pagina_colaboradores'))
+
+# ===== ROTAS PARA USO TEMPORARIO (SEM NF) =====
+
+@app.route('/uso_temporario')
+def pagina_uso_temporario():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor':
+        flash('Acesso negado: você não tem permissão para esta área.', 'danger')
+        return redirect(url_for('pagina_inicial'))
+
+    # Busca todos os produtos para popular o dropdown do formulário
+    try:
+        produtos_response = supabase.table('produtos').select('id, descricao').order('descricao').execute()
+        produtos = produtos_response.data
+    except Exception as e:
+        produtos = []
+        flash(f'Erro ao carregar produtos: {e}', 'danger')
+
+    # Busca todos os usos temporários com o nome do produto relacionado
+    try:
+        usos_response = supabase.table('uso_temporario').select('*, produtos(descricao)').order('id', desc=True).execute()
+        usos_temporarios = usos_response.data
+    except Exception as e:
+        usos_temporarios = []
+        flash(f'Erro ao carregar usos temporários: {e}', 'danger')
+
+    return render_template('uso_temporario.html', produtos=produtos, usos_temporarios=usos_temporarios)
+
+@app.route('/uso_temporario/adicionar', methods=['POST'])
+def adicionar_uso_temporario():
+    if 'user_id' not in session: return redirect(url_for('login'))
+    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+
+    try:
+        dados_novo_uso = {
+            'produto_id': request.form['produto_id'],
+            'quantidade_usada': request.form['quantidade_usada'],
+            'numero_requisicao_alvo': request.form['numero_requisicao_alvo'].strip().upper()
+            # data_uso e status já têm valores padrão definidos no banco
+        }
+        supabase.table('uso_temporario').insert(dados_novo_uso).execute()
+        flash('Uso temporário registrado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Erro ao registrar uso temporário: {e}', 'danger')
+
+    return redirect(url_for('pagina_uso_temporario'))
 
 # --- Bloco de Execução ---
 if __name__ == '__main__':

@@ -1,0 +1,27 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Editar Equipamento{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Editar Equipamento</h1>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form action="{{ url_for('editar_equipamento') }}" method="post">
+            <input type="hidden" name="equipamento_id" value="{{ equipamento.id }}">
+            <div class="mb-3">
+                <label for="codigo_identificador" class="form-label">Código Identificador</label>
+                <input type="text" class="form-control" id="codigo_identificador" name="codigo_identificador" value="{{ equipamento.codigo_identificador }}" required>
+            </div>
+            <div class="mb-3">
+                <label for="descricao" class="form-label">Descrição</label>
+                <input type="text" class="form-control" id="descricao" name="descricao" value="{{ equipamento.descricao }}" required>
+            </div>
+            <button type="submit" class="btn btn-success">Salvar Alterações</button>
+            <a href="{{ url_for('pagina_equipamentos') }}" class="btn btn-secondary">Cancelar</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

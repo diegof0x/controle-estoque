@@ -1,0 +1,65 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Gerenciar Equipamentos{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Gerenciar Equipamentos</h1>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        Adicionar Novo Equipamento
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('adicionar_equipamento') }}" method="post">
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="codigo_identificador" class="form-label">Código Identificador (Ex: FROTA-001)</label>
+                    <input type="text" class="form-control" id="codigo_identificador" name="codigo_identificador" required>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="descricao" class="form-label">Descrição (Ex: Saveiro CS, Trator de Esteira D6)</label>
+                    <input type="text" class="form-control" id="descricao" name="descricao" required>
+                </div>
+                <div class="col-md-2 d-flex align-items-end mb-3">
+                    <button type="submit" class="btn btn-primary w-100">Adicionar</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<h2 class="h3">Equipamentos Cadastrados</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Código Identificador</th>
+                <th scope="col">Descrição</th>
+                <th scope="col" class="text-end">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for equipamento in equipamentos %}
+            <tr>
+                <td>{{ equipamento.id }}</td>
+                <td>{{ equipamento.codigo_identificador }}</td>
+                <td>{{ equipamento.descricao }}</td>
+                <td class="text-end">
+                    <a href="{{ url_for('pagina_editar_equipamento', equipamento_id=equipamento.id) }}" class="btn btn-warning btn-sm">Editar</a>
+                    <form action="{{ url_for('excluir_equipamento', equipamento_id=equipamento.id) }}" method="post" style="display:inline;" onsubmit="return confirm('Tem certeza que deseja excluir este equipamento?');">
+                        <button type="submit" class="btn btn-danger btn-sm">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="text-center">Nenhum equipamento cadastrado.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

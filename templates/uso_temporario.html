@@ -1,0 +1,81 @@
+{% extends "layout_base.html" %}
+
+{% block title %}Uso de Material Sem NF{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Uso de Material Sem Nota Fiscal</h1>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        Registrar Novo Uso Temporário
+    </div>
+    <div class="card-body">
+        <form action="{{ url_for('adicionar_uso_temporario') }}" method="post">
+            <div class="row">
+                <div class="col-md-5 mb-3">
+                    <label for="produto_id" class="form-label">Produto</label>
+                    <select class="form-select" id="produto_id" name="produto_id" required>
+                        <option value="" disabled selected>Selecione um produto...</option>
+                        {% for produto in produtos %}
+                        <option value="{{ produto.id }}">{{ produto.descricao }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <label for="quantidade_usada" class="form-label">Quantidade</label>
+                    <input type="number" step="0.01" class="form-control" id="quantidade_usada" name="quantidade_usada" required>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <label for="numero_requisicao_alvo" class="form-label">Nº Requisição (ALVO)</label>
+                    <input type="text" class="form-control" id="numero_requisicao_alvo" name="numero_requisicao_alvo" required>
+                </div>
+                <div class="col-md-2 d-flex align-items-end mb-3">
+                    <button type="submit" class="btn btn-primary w-100">Registrar Uso</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<h2 class="h3">Itens com Uso Temporário Pendente</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Produto</th>
+                <th scope="col">Nº Req. (ALVO)</th>
+                <th scope="col">Qtd. Usada</th>
+                <th scope="col">Data do Uso</th>
+                <th scope="col">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for uso in usos_temporarios %}
+            <tr>
+                <td>{{ uso.id }}</td>
+                <td>{{ uso.produtos.descricao if uso.produtos else 'Produto não encontrado' }}</td>
+                <td>{{ uso.numero_requisicao_alvo }}</td>
+                <td>{{ uso.quantidade_usada }}</td>
+                <td>{{ uso.data_uso | format_datetime }}</td>
+                <td>
+                    {% if uso.status == 'Pendente' %}
+                        <span class="badge bg-warning text-dark">{{ uso.status }}</span>
+                    {% elif uso.status == 'Baixado Parcialmente' %}
+                        <span class="badge bg-info text-dark">{{ uso.status }}</span>
+                    {% else %}
+                        <span class="badge bg-success">{{ uso.status }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center">Nenhum uso temporário registrado.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -45,7 +45,7 @@
             <tr class="{% if item.quantidade_contada is not none and item.quantidade_contada != item.quantidade_teorica %}table-warning{% endif %}">
                 <td>
                     {{ item.produtos.descricao if item.produtos else 'N/A' }}
-                    <small class="d-block text-muted">Cód: {{ item.produtos.codigo_interno if item.produtos }}</small>
+                    <small class="d-block text-muted">Cód: {{ item.produtos.codigo_sustentare if item.produtos }}</small>
                 </td>
                 <td class="text-center align-middle">{{ item.quantidade_teorica }}</td>
                 <td class="text-center align-middle">
