@@ -1,18 +1,17 @@
 {% extends "layout_base.html" %}
 
-{% block title %}Contagem do Inventário #{{ inventario.id }} - Controle Total{% endblock %}
+{% block title %}Contagem de Inventário{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>Contagem do Inventário #{{ inventario.id }}</h1>
+    <h1>Contagem do Inventário #{{ inventario.id }} - {{ inventario.descricao if inventario.descricao else '' }}</h1>
     <div>
-        </div>
-</div>
-
-<div class="card mb-4">
-    <div class="card-body">
-        <p class="mb-1"><strong>Iniciado em:</strong> {{ convert_utc_to_local(inventario.data_inicio) }}</p>
-        <p class="mb-0"><strong>Iniciado por:</strong> {{ inventario.usuarios.nome if inventario.usuarios else 'N/A' }}</p>
+        <a href="{{ url_for('exportar_contagem_inventario_csv', inventario_id=inventario.id) }}" class="btn btn-secondary">
+            <i class="bi bi-printer"></i> Exportar para Contagem
+        </a>
+        <a href="{{ url_for('pagina_revisar_inventario', inventario_id=inventario.id) }}" class="btn btn-success">
+            <i class="bi bi-check-circle"></i> Revisar e Finalizar
+        </a>
     </div>
 </div>
 
@@ -20,36 +19,43 @@
     <input type="hidden" name="inventario_id" value="{{ inventario.id }}">
 
     <div class="table-responsive">
-        <table class="table table-bordered">
-            <thead class="table-light">
+        <table class="table table-striped table-hover">
+            <thead>
                 <tr>
-                    <th>Produto</th>
-                    <th class="text-center">Estoque Teórico</th>
-                    <th class="text-center" style="width: 150px;">Quantidade Contada</th>
+                    <th>ID Produto</th>
+                    <th>Cód. Sustentare</th>
+                    <th>Cód. Valor</th>
+                    <th>Descrição</th>
+                    <th class="text-center">Estoque no Sistema</th>
+                    <th style="width: 180px;">Quantidade Contada</th>
                 </tr>
             </thead>
-            tbody>
+            <tbody>
                 {% for item in itens_inventario %}
                 <tr>
+                    <td>{{ item.produto_id }}</td>
+                    <td>{{ (item.get('produtos') or {}).get('codigo_sustentare', '') }}</td>
+                    <td>{{ (item.get('produtos') or {}).get('codigo_valor', '') }}</td>
+                    <td>{{ (item.get('produtos') or {}).get('descricao', 'N/A') }}</td>
+                    <td class="text-center fw-bold">{{ item.quantidade_teorica }}</td>
                     <td>
-                        {{ item.produtos.descricao if item.produtos else 'Produto não encontrado' }}
-                        <small class="d-block text-muted">Cód: {{ item.produtos.codigo_sustentare if item.produtos }}</small>
+                        <input type="number" step="0.01" class="form-control" name="quantidade_{{ item.id }}" value="{{ item.quantidade_contada if item.quantidade_contada is not none else '' }}">
                     </td>
-                    <td class="text-center align-middle">{{ item.quantidade_teorica }}</td>
-                    <td class="text-center align-middle">
-                        <input type="hidden" name="qtd_teorica_{{ item.produto_id }}" value="{{ item.quantidade_teorica }}">
-                        
-                        <input type="number" class="form-control text-center" name="qtd_contada_{{ item.produto_id }}" value="{{ item.quantidade_contada if item.quantidade_contada is not none else '' }}" placeholder="0">
-                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center">Nenhum item para contar neste inventário.</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <div class="text-end mt-3">
-        <a href="{{ url_for('pagina_inventarios_em_andamento') }}" class="btn btn-secondary">Voltar</a>
-        <button type="submit" class="btn btn-success"><i class="bi bi-save-fill me-2"></i>Salvar Progresso</button>
+    <div class="text-center mt-4">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-save"></i> Salvar Contagens
+        </button>
     </div>
 </form>
+
 {% endblock %}

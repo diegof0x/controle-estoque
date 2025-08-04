@@ -528,6 +528,46 @@ def exportar_estoque_atual_csv():
     
     return output
 
+@app.route('/inventario/<int:inventario_id>/exportar_contagem_csv')
+def exportar_contagem_inventario_csv(inventario_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    try:
+        itens_response = supabase.table('inventario_itens').select(
+            '*, produtos(descricao, codigo_sustentare, codigo_valor)'
+        ).eq('inventario_id', inventario_id).order('produto_id').execute()
+        itens_inventario = itens_response.data
+
+        si = io.StringIO()
+        cw = csv.writer(si, delimiter=';')
+        
+        # CORREÇÃO 1: Adicionada a coluna "Quantidade Teórica" no cabeçalho
+        cabecalho = ['ID Produto', 'Cód. Sustentare', 'Cód. Valor', 'Descrição do Produto', 'Quantidade Teórica', 'Quantidade Contada']
+        cw.writerow(cabecalho)
+        
+        for item in itens_inventario:
+            # CORREÇÃO 2: Adicionado o dado 'quantidade_teorica' na linha
+            linha = [
+                item.get('produto_id'),
+                (item.get('produtos') or {}).get('codigo_sustentare', ''),
+                (item.get('produtos') or {}).get('codigo_valor', ''),
+                (item.get('produtos') or {}).get('descricao', ''),
+                item.get('quantidade_teorica', ''), # Dado do estoque teórico
+                '' # Coluna vazia para a contagem manual
+            ]
+            cw.writerow(linha)
+            
+        csv_bytes = si.getvalue().encode('utf-8-sig')
+        output = make_response(csv_bytes)
+        output.headers["Content-Disposition"] = f"attachment; filename=folha_contagem_inventario_{inventario_id}.csv"
+        output.headers["Content-type"] = "text/csv; charset=utf-8-sig"
+        return output
+
+    except Exception as e:
+        flash(f'Erro ao gerar CSV de contagem: {e}', 'danger')
+        return redirect(url_for('pagina_contagem_inventario', inventario_id=inventario_id))
+    
 @app.route('/produtos/adicionar', methods=['POST'])
 def adicionar_produto():
     if 'user_id' not in session or session.get('user_role') != 'gestor':
@@ -920,17 +960,14 @@ def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, pr
 
         resultado_final = []
         for produto in produtos:
-            # Dicionário para guardar os resultados do produto
             dados_relatorio = {
                 'id': produto['id'], 'descricao': produto['descricao'],
-                'codigo_sustentare': produto['codigo_sustentare'], 'codigo_valor': produto['codigo_valor'],
-                'categorias': produto['categorias'],
+                'codigo_sustentare': produto.get('codigo_sustentare'), 'codigo_valor': produto.get('codigo_valor'),
+                'categorias': produto.get('categorias'),
                 'inicial_qtd': 0.0, 'inicial_valor': 0.0,
                 'entradas_qtd': 0.0, 'entradas_valor': 0.0,
                 'saidas_qtd': 0.0, 'saidas_valor': 0.0,
             }
-
-            # 1. Calcula o estado inicial (até a data de início)
             qtd_custo_inicial = 0.0
             for mov in movimentacoes:
                 data_mov_str = mov.get('created_at', '')[:10]
@@ -948,8 +985,10 @@ def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, pr
                         dados_relatorio['inicial_valor'] -= quantidade * custo_medio_ate_entao
             
             dados_relatorio['inicial_cmp'] = dados_relatorio['inicial_valor'] / dados_relatorio['inicial_qtd'] if dados_relatorio['inicial_qtd'] > 0 else 0
+            
+            valor_corrente = dados_relatorio['inicial_valor']
+            qtd_custo_corrente = qtd_custo_inicial
 
-            # 2. Calcula as movimentações dentro do período
             for mov in movimentacoes:
                 data_mov_str = mov.get('created_at', '')[:10]
                 if mov.get('produto_id') == produto['id'] and data_mov_str and data_inicio <= data_mov_str <= data_fim:
@@ -958,20 +997,23 @@ def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, pr
                     if mov.get('tipo') == 'entrada':
                         dados_relatorio['entradas_qtd'] += quantidade
                         dados_relatorio['entradas_valor'] += quantidade * preco_unit
-                    else: # Saída
+                        if preco_unit > 0:
+                            valor_corrente += quantidade * preco_unit
+                            qtd_custo_corrente += quantidade
+                    else:
+                        custo_medio_no_momento_da_saida = valor_corrente / qtd_custo_corrente if qtd_custo_corrente > 0 else 0
                         dados_relatorio['saidas_qtd'] += quantidade
-                        dados_relatorio['saidas_valor'] += quantidade * preco_unit # O preco_unitario na saída já é o custo médio daquele momento
-            
+                        dados_relatorio['saidas_valor'] += quantidade * custo_medio_no_momento_da_saida
+                        valor_corrente -= quantidade * custo_medio_no_momento_da_saida
+
             dados_relatorio['entradas_cmp'] = dados_relatorio['entradas_valor'] / dados_relatorio['entradas_qtd'] if dados_relatorio['entradas_qtd'] > 0 else 0
             dados_relatorio['saidas_cmp'] = dados_relatorio['saidas_valor'] / dados_relatorio['saidas_qtd'] if dados_relatorio['saidas_qtd'] > 0 else 0
             
-            # 3. Calcula os totais finais
             dados_relatorio['final_qtd'] = dados_relatorio['inicial_qtd'] + dados_relatorio['entradas_qtd'] - dados_relatorio['saidas_qtd']
             dados_relatorio['final_valor'] = dados_relatorio['inicial_valor'] + dados_relatorio['entradas_valor'] - dados_relatorio['saidas_valor']
             dados_relatorio['final_cmp'] = dados_relatorio['final_valor'] / dados_relatorio['final_qtd'] if dados_relatorio['final_qtd'] > 0 else 0
             
             resultado_final.append(dados_relatorio)
-            
         return resultado_final
     except Exception as e:
         print(f"Erro ao calcular posição de estoque: {e}")
@@ -982,11 +1024,9 @@ def pagina_posicao_estoque():
     if 'user_id' not in session or session.get('user_role') != 'gestor':
         return redirect(url_for('login'))
 
-    # Busca dados para os filtros
     todos_produtos = supabase.table('produtos').select('id, descricao, codigo_sustentare, codigo_valor').order('descricao').execute().data
     todas_categorias = supabase.table('categorias').select('id, nome_categoria').order('nome_categoria').execute().data
 
-    # Pega todos os filtros da URL, incluindo os de ordenação
     filtros = {
         'data_inicio': request.args.get('data_inicio', datetime.now().replace(day=1).strftime('%Y-%m-%d')),
         'data_fim': request.args.get('data_fim', datetime.now().strftime('%Y-%m-%d')),
@@ -996,16 +1036,12 @@ def pagina_posicao_estoque():
         'order': request.args.get('order', 'asc')
     }
     
-    # Chama a função "motor" para calcular os dados
     dados_posicao = calcular_posicao_estoque_data(filtros['data_inicio'], filtros['data_fim'], filtros['categorias_ids'], filtros['produtos_ids'])
     
-    # Aplica a lógica de ordenação no resultado
     is_reverse = filtros['order'] == 'desc'
-    # Chave de ordenação segura que lida com diferentes tipos de dados
     def sort_key(item):
         valor = item.get(filtros['sort_by'], 0)
-        if isinstance(valor, (int, float)):
-            return valor
+        if isinstance(valor, (int, float)): return valor
         return str(valor).lower()
     dados_posicao.sort(key=sort_key, reverse=is_reverse)
 
@@ -1015,21 +1051,20 @@ def pagina_posicao_estoque():
                            todas_categorias=todas_categorias,
                            todos_produtos=todos_produtos)
 
-@app.route('/inventario/iniciar', methods=['GET'])
+@app.route('/inventario/iniciar')
 def pagina_iniciar_inventario():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    if session.get('user_role') != 'gestor':
-        flash('Acesso negado: apenas gestores podem iniciar inventários.', 'danger')
-        return redirect(url_for('pagina_contagem_inventario', inventario_id=inventario_id))
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        flash('Acesso negado: você não tem permissão para esta área.', 'danger')
+        return redirect(url_for('pagina_inicial'))
     
-    # Busca todos os produtos para a tela de seleção
     try:
-        response = supabase.table('produtos').select('id, codigo_sustentare, descricao').order('descricao').execute()
-        todos_produtos = response.data
+        # Busca todos os produtos para exibir na lista de seleção do inventário
+        response_produtos = supabase.table('produtos').select('id, descricao, codigo_sustentare').order('descricao').execute()
+        todos_produtos = response_produtos.data
     except Exception as e:
-        flash(f"Erro ao carregar produtos: {e}", "danger")
+        flash(f'Erro ao carregar a lista de produtos: {e}', 'danger')
         todos_produtos = []
-    
+        
     return render_template('iniciar_inventario.html', todos_produtos=todos_produtos)
 
 @app.route('/inventario/iniciar', methods=['POST'])
@@ -1047,17 +1082,17 @@ def iniciar_inventario():
     produtos_para_inventariar = response_produtos.data
 
     try:
-        # 1. Cria o "cabeçalho" do inventário
-        dados_inventario = {'usuario_iniciou_id': session['user_id']}
+        dados_inventario = {
+            'usuario_iniciou_id': session['user_id']
+            # O status padrão 'Em Andamento' já é definido pelo Supabase
+        }
         
-        # --- LINHA CORRIGIDA ---
-        # O método .insert() já retorna os dados inseridos. Não precisamos do .select()
         response_insert = supabase.table('inventarios').insert(dados_inventario).execute()
         inventario_criado = response_insert.data[0]
         inventario_id = inventario_criado['id']
-        # --- FIM DA CORREÇÃO ---
 
-        # 2. Cria os itens do inventário com o estoque "congelado"
+        # --- CORREÇÃO FINAL APLICADA AQUI ---
+        # Usando o nome da coluna correto ('quantidade_teorica')
         itens_para_inserir = []
         for produto in produtos_para_inventariar:
             itens_para_inserir.append({
@@ -1070,8 +1105,8 @@ def iniciar_inventario():
             supabase.table('inventario_itens').insert(itens_para_inserir).execute()
 
         flash(f'Inventário #{inventario_id} iniciado com sucesso com {len(itens_para_inserir)} itens.', 'success')
-        # Por enquanto, redireciona para a lista de inventários (que ainda vamos criar)
-        return redirect(url_for('pagina_inicial')) # Placeholder temporário
+        # Melhoria de UX: Redireciona para a lista de inventários em andamento
+        return redirect(url_for('pagina_inventarios_em_andamento'))
 
     except Exception as e:
         flash(f'Ocorreu um erro ao iniciar o inventário: {e}', 'danger')
@@ -1095,24 +1130,29 @@ def pagina_inventarios_em_andamento():
 
     return render_template('inventarios_em_andamento.html', inventarios=inventarios)
 
-@app.route('/inventario/<int:inventario_id>/contagem')
+@app.route('/inventario/contagem/<int:inventario_id>')
 def pagina_contagem_inventario(inventario_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    
-    try:
-        # Busca o cabeçalho do inventário
-        response_inv = supabase.table('inventarios').select('*, usuario_iniciou:usuarios!inventarios_usuario_iniciou_id_fkey(nome)').eq('id', inventario_id).single().execute()
-        inventario = response_inv.data
-        
-        # Busca os itens a serem contados, com os nomes dos produtos
-        response_itens = supabase.table('inventario_itens').select('*, produtos(*)').eq('inventario_id', inventario_id).order('id').execute()
-        itens_inventario = response_itens.data
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
 
-    except Exception as e:
-        flash(f'Erro ao carregar dados do inventário: {e}', 'danger')
-        return redirect(url_for('pagina_inventarios_em_andamento'))
+    response_inventario = supabase.table('inventarios').select('*').eq('id', inventario_id).single().execute()
+    inventario = response_inventario.data
 
-    return render_template('contagem_inventario.html', inventario=inventario, itens_inventario=itens_inventario)
+    # CORREÇÃO: Aprimorando o select para buscar os códigos dos produtos
+    response_itens = supabase.table('inventario_itens').select(
+        '*, produtos(descricao, codigo_sustentare, codigo_valor)'
+    ).eq('inventario_id', inventario_id).execute()
+    itens_inventario = response_itens.data
+
+    # A lógica de filtro que você já tinha é mantida
+    filtro = request.args.get('filtro', 'todos')
+    filtered_itens = itens_inventario
+    if filtro == 'contados':
+        filtered_itens = [item for item in itens_inventario if item['quantidade_contada'] is not None]
+    elif filtro == 'nao_contados':
+        filtered_itens = [item for item in itens_inventario if item['quantidade_contada'] is None]
+
+    return render_template('contagem_inventario.html', inventario=inventario, itens_inventario=filtered_itens, filtro=filtro)
 
 @app.route('/inventario/salvar_contagem', methods=['POST'])
 def salvar_contagem_inventario():
