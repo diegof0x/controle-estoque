@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header">
     <h1>Revisar Inventário #{{ inventario.id }}</h1>
-    <form action="{{ url_for('exportar_relatorio_inventario_csv') }}" method="get">
+    <form action="{{ url_for('exportar_detalhe_inventario_csv') }}" method="get">
         <input type="hidden" name="inventario_id" value="{{ inventario.id }}">
         <button type="submit" class="btn btn-success"><i class="bi bi-file-earmark-excel-fill me-2"></i>Exportar para CSV</button>
     </form>

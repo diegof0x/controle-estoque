@@ -15,11 +15,11 @@
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="codigo_sustentare" class="form-label">Código Sustentare</label>
-                    <input type="text" class="form-control" name="codigo_sustentare" value="{{ produto.codigo_sustentare }}">
+                    <input type="text" class="form-control" name="codigo_sustentare" value="{{ produto.codigo_sustentare or '0' }}">
                 </div>
                 <div class="col-md-6 mb-3">
                     <label for="codigo_valor" class="form-label">Código Valor</label>
-                    <input type="text" class="form-control" name="codigo_valor" value="{{ produto.codigo_valor }}">
+                    <input type="text" class="form-control" name="codigo_valor" value="{{ produto.codigo_valor or '0' }}">
                 </div>
             </div>
             <div class="row">

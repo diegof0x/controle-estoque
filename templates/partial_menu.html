@@ -1,0 +1,63 @@
+<ul class="nav flex-column">
+    <li class="nav-item"><a class="nav-link" href="{{ url_for('pagina_inicial') }}"><i class="bi bi-house-door-fill"></i> Dashboard</a></li>
+    <li class="nav-item"><a class="nav-link" href="{{ url_for('pagina_estoque') }}"><i class="bi bi-box-seam-fill"></i> Estoque</a></li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="collapse" href="#inventarioSubmenu" role="button" aria-expanded="false" aria-controls="inventarioSubmenu">
+            <i class="bi bi-card-checklist"></i> Inventário
+        </a>
+        <div class="collapse" id="inventarioSubmenu">
+            <ul class="nav flex-column ms-3">
+                {% if session.user_role == 'gestor' %}<li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_iniciar_inventario') }}">Iniciar Novo</a></li>{% endif %}
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_inventarios_em_andamento') }}">Em Andamento</a></li>
+                {% if session.user_role == 'gestor' %}<li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_historico_inventarios') }}">Histórico</a></li>{% endif %}
+            </ul>
+        </div>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('pagina_uso_temporario') }}">
+            <i class="bi bi-hourglass-split"></i> Uso Sem NF
+        </a>
+    </li>
+    {% if session.user_role == 'gestor' %}
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="collapse" href="#relatoriosSubmenu" role="button" aria-expanded="false" aria-controls="relatoriosSubmenu">
+            <i class="bi bi-file-earmark-bar-graph-fill"></i> Relatórios
+        </a>
+        <div class="collapse" id="relatoriosSubmenu">
+            <ul class="nav flex-column ms-3">
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_relatorio_historico') }}">Histórico de Lançamentos</a></li>
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_posicao_estoque') }}">Posição de Estoque</a></li>
+            </ul>
+        </div>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="collapse" href="#cadastrosSubmenu" role="button" aria-expanded="false" aria-controls="cadastrosSubmenu">
+            <i class="bi bi-pencil-fill"></i> Cadastros
+        </a>
+        <div class="collapse" id="cadastrosSubmenu">
+            <ul class="nav flex-column ms-3">
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_usuarios') }}">Usuários</a></li>
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_fornecedores') }}">Fornecedores</a></li>
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_categorias') }}">Categorias</a></li>
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_unidades_medida') }}">Unidades de Medida</a></li>
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_equipamentos') }}">Equipamentos</a></li>
+                <li class="nav-item"><a class="nav-link py-1" href="{{ url_for('pagina_colaboradores') }}">Colaboradores</a></li>
+            </ul>
+        </div>
+    </li>
+    {% endif %}
+</ul>
+<div class="mt-auto">
+    {% if session.user_name %}
+    <hr>
+    <div class="dropdown">
+        <a href="#" class="d-flex align-items-center text-dark text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-person-circle fs-4 me-2"></i>
+            <strong>{{ session.user_name }}</strong>
+        </a>
+        <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUser1">
+            <li><a class="dropdown-item" href="{{ url_for('logout') }}">Sair</a></li>
+        </ul>
+    </div>
+    {% endif %}
+</div>
