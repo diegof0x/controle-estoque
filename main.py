@@ -70,7 +70,6 @@ def padronizar_texto(texto):
 def utility_processor():
     return dict(convert_utc_to_local=convert_utc_to_local)
 
-# --- ROTAS DE AUTENTICAÇÃO ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session:
@@ -80,25 +79,27 @@ def login():
         email = request.form['email']
         senha = request.form['senha']
         
-        # CORREÇÃO 1: A consulta agora busca o nome da função na tabela relacionada 'funcoes'
-        response = supabase.table('usuarios').select('*, funcoes(nome_funcao)').eq('email', email).single().execute()
-        user = response.data
+        # CORREÇÃO: Removemos o .single() e usamos .limit(1) para buscar no máximo um usuário.
+        # Isso não causa erro se nenhum usuário for encontrado.
+        response = supabase.table('usuarios').select('*, funcoes(nome_funcao)').eq('email', email).limit(1).execute()
+        user_list = response.data
         
-        if user and check_password_hash(user['senha'], senha):
-            session['user_id'] = user['id']
-            session['user_name'] = user['nome']
-            
-            # CORREÇÃO 2: Acessamos o nome da função da nova forma e o salvamos na sessão
-            # Verificamos se a relação 'funcoes' não é nula antes de acessá-la
-            if user.get('funcoes'):
-                # Adicionamos .lower() para manter o padrão 'gestor' em minúsculo que o resto do sistema espera
-                session['user_role'] = user['funcoes']['nome_funcao'].lower()
-            else:
-                session['user_role'] = 'desconhecido' # Um valor padrão para evitar erros
-
-            return redirect(url_for('pagina_inicial'))
-        else:
+        # Verificamos se a lista está vazia (usuário não encontrado) OU se a senha está incorreta.
+        if not user_list or not check_password_hash(user_list[0]['senha'], senha):
             flash('E-mail ou senha inválidos.', 'danger')
+            return redirect(url_for('login'))
+
+        # Se passou nas verificações, o login é um sucesso.
+        user = user_list[0]
+        session['user_id'] = user['id']
+        session['user_name'] = user['nome']
+        
+        if user.get('funcoes'):
+            session['user_role'] = user['funcoes']['nome_funcao'].lower()
+        else:
+            session['user_role'] = 'desconhecido'
+
+        return redirect(url_for('pagina_inicial'))
     
     return render_template('login.html')
 
