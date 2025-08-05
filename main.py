@@ -412,15 +412,35 @@ def pagina_inicial():
 def pagina_estoque():
     if 'user_id' not in session: return redirect(url_for('login'))
     
-    # --- LÓGICA DE BUSCA (EXISTENTE) ---
+    # --- LÓGICA DE PAGINAÇÃO ---
+    ITENS_POR_PAGINA = 50 # Ajustado conforme sua solicitação
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+    
+    start_index = (page - 1) * ITENS_POR_PAGINA
+    end_index = start_index + ITENS_POR_PAGINA - 1
+    
+    # --- LÓGICA DE BUSCA E ORDENAÇÃO ---
     termo_busca = request.args.get('busca', '').strip()
-    query = supabase.table('produtos').select('*, categorias(nome_categoria)')
+    sort_by = request.args.get('sort_by', 'id')
+    order = request.args.get('order', 'asc')
+
+    # 1. Constrói a query base, pedindo a contagem total de itens
+    query = supabase.table('produtos').select('*, categorias(nome_categoria)', count='exact')
     if termo_busca:
         query = query.or_(f'descricao.ilike.%{termo_busca}%,codigo_sustentare.ilike.%{termo_busca}%,codigo_valor.ilike.%{termo_busca}%')
-    response_produtos = query.execute() # Executa a busca, mas sem ordenação por enquanto
+
+    # 2. Executa a query com ordenação e paginação (usando .range())
+    response_produtos = query.order(sort_by, desc=(order == 'desc')).range(start_index, end_index).execute()
     produtos_data = response_produtos.data
+    total_itens = response_produtos.count
+
+    # 3. Calcula o total de páginas
+    total_pages = (total_itens + ITENS_POR_PAGINA - 1) // ITENS_POR_PAGINA
     
-    # --- LÓGICA DE CÁLCULO (EXISTENTE) ---
+    # --- LÓGICA DE CÁLCULO DE CUSTOS (EXISTENTE) ---
     for produto in produtos_data:
         quantidade_com_custo = float(produto.get('quantidade_com_custo') or 0)
         valor_total_estoque = float(produto.get('valor_total_estoque') or 0)
@@ -432,36 +452,22 @@ def pagina_estoque():
             
         produto['valor_total_calculado'] = produto['custo_medio'] * float(produto.get('estoque_atual') or 0)
 
-    # --- NOVA LÓGICA DE ORDENAÇÃO (EM PYTHON) ---
-    # 1. Pega os parâmetros da URL, com valores padrão 'id' e 'asc'
-    sort_by = request.args.get('sort_by', 'id')
-    order = request.args.get('order', 'asc')
-    is_reverse = order == 'desc'
-
-    # 2. Define uma função segura para extrair a chave de ordenação de cada produto
-    def sort_key(produto):
-        valor = produto.get(sort_by, 0) # Pega o valor da coluna, ou 0 se não existir
-        if isinstance(valor, (int, float)):
-            return valor
-        return str(valor).lower() # Converte para string minúscula para ordenação de texto
-
-    # 3. Ordena a lista de produtos usando a chave e a ordem definidas
-    try:
-        produtos_data.sort(key=sort_key, reverse=is_reverse)
-    except Exception as e:
-        print(f"Erro ao ordenar produtos: {e}") # Loga o erro no terminal
-        flash("Ocorreu um erro ao tentar ordenar os produtos.", "danger")
-    
-    # --- FIM DA LÓGICA DE ORDENAÇÃO ---
-
-    # Buscas para os formulários da página (continua igual)
+    # Buscas para os formulários
     response_categorias = supabase.table('categorias').select('*').execute()
     categorias = response_categorias.data
     response_unidades = supabase.table('unidades_medida').select('*').execute()
     unidades_medida = response_unidades.data
     
-    # 4. Envia os parâmetros de ordenação para o template saber qual seta mostrar
-    return render_template('estoque.html', produtos=produtos_data, categorias=categorias, unidades_medida=unidades_medida, busca=termo_busca, sort_by=sort_by, order=order)
+    # Envia os dados da paginação para o template
+    return render_template('estoque.html', 
+                           produtos=produtos_data, 
+                           categorias=categorias, 
+                           unidades_medida=unidades_medida, 
+                           busca=termo_busca, 
+                           sort_by=sort_by, 
+                           order=order,
+                           page=page,
+                           total_pages=total_pages)
 
 @app.route('/estoque/exportar_csv')
 def exportar_estoque_atual_csv():
