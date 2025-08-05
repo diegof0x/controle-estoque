@@ -1248,66 +1248,75 @@ def finalizar_inventario(inventario_id):
     if 'user_id' not in session or session.get('user_role') != 'gestor':
         return redirect(url_for('login'))
 
+    observacoes = request.form.get('observacoes')
+    
     try:
-        # Busca os itens do inventário para processar
-        itens_inventario_response = supabase.table('inventario_itens').select('*, produtos(valor_total_estoque, quantidade_com_custo)').eq('inventario_id', inventario_id).execute()
-        itens_inventario = itens_inventario_response.data
+        # 1. Busca todos os itens do inventário para processar as divergências
+        itens_inventario = supabase.table('inventario_itens').select('*, produtos(*)').eq('inventario_id', inventario_id).execute().data
 
-        movimentacoes_para_inserir = []
+        movimentacoes_ajuste = []
         produtos_para_atualizar = []
 
         for item in itens_inventario:
-            # Garante que os valores são numéricos
-            quantidade_contada = float(item.get('quantidade_contada', 0) or 0)
-            estoque_sistema = float(item.get('estoque_sistema', 0) or 0)
-            diferenca = quantidade_contada - estoque_sistema
+            qtd_contada_str = item.get('quantidade_contada')
+            if qtd_contada_str is None: continue # Ignora itens não contados
+
+            qtd_contada = float(qtd_contada_str)
+            qtd_teorica = float(item['quantidade_teorica'])
+            diferenca = qtd_contada - qtd_teorica
 
             if diferenca != 0:
-                tipo_movimento = 'entrada' if diferenca > 0 else 'saida'
+                produto = item['produtos']
+                tipo_mov = 'entrada' if diferenca > 0 else 'saida'
                 
-                # Calcula o custo médio atual para registrar o valor do ajuste
-                produto_valor_total = float(item['produtos'].get('valor_total_estoque', 0) or 0)
-                produto_qtd_custo = float(item['produtos'].get('quantidade_com_custo', 0) or 0)
-                custo_medio_atual = produto_valor_total / produto_qtd_custo if produto_qtd_custo > 0 else 0
-
-                # --- CORREÇÃO APLICADA AQUI ---
-                # Cria a movimentação de ajuste usando as colunas corretas
-                nova_movimentacao = {
-                    'produto_id': item['produto_id'],
-                    'tipo': tipo_movimento,
+                custo_medio = float(produto['valor_total_estoque']) / float(produto['quantidade_com_custo']) if float(produto['quantidade_com_custo']) > 0 else 0
+                
+                # Prepara a movimentação de ajuste com as colunas corretas
+                movimentacoes_ajuste.append({
+                    'produto_id': produto['id'],
+                    'tipo': tipo_mov,
                     'quantidade': abs(diferenca),
                     'usuario_id': session['user_id'],
-                    'preco_unitario': custo_medio_atual,
-                    'numero_requisicao_manual': f'AJUSTE DE INVENTÁRIO ID {inventario_id}'
-                }
-                movimentacoes_para_inserir.append(nova_movimentacao)
-
+                    'preco_unitario': custo_medio,
+                    'numero_requisicao_manual': f"AJUSTE INVENTÁRIO #{inventario_id}"
+                })
+                
                 # Prepara a atualização do produto
-                novo_valor_total = produto_valor_total + (diferenca * custo_medio_atual)
-                dados_produto_update = {
-                    'estoque_atual': quantidade_contada,
-                    'valor_total_estoque': novo_valor_total
-                    # A base de cálculo (quantidade_com_custo) não muda em ajustes de inventário
-                }
-                produtos_para_atualizar.append({'id': item['produto_id'], 'update_data': dados_produto_update})
+                novo_estoque = float(produto['estoque_atual']) + diferenca
+                novo_valor_total = float(produto['valor_total_estoque']) + (diferenca * custo_medio)
+                
+                produtos_para_atualizar.append({
+                    'id': produto['id'],
+                    'dados': {
+                        'estoque_atual': novo_estoque,
+                        'valor_total_estoque': novo_valor_total
+                    }
+                })
 
-        # Executa as operações no banco de dados
-        if movimentacoes_para_inserir:
-            supabase.table('movimentacoes').insert(movimentacoes_para_inserir).execute()
-        
-        for produto_update in produtos_para_atualizar:
-            supabase.table('produtos').update(produto_update['update_data']).eq('id', produto_update['id']).execute()
+        # Insere todas as movimentações de ajuste de uma vez (mais eficiente)
+        if movimentacoes_ajuste:
+            supabase.table('movimentacoes').insert(movimentacoes_ajuste).execute()
 
-        # Atualiza o status do inventário para 'Finalizado'
-        supabase.table('inventarios').update({'status': 'Finalizado', 'data_finalizacao': datetime.now().isoformat()}).eq('id', inventario_id).execute()
+        # Atualiza todos os produtos de uma vez (mais eficiente)
+        for prod_update in produtos_para_atualizar:
+            supabase.table('produtos').update(prod_update['dados']).eq('id', prod_update['id']).execute()
 
-        flash('Inventário finalizado e estoque ajustado com sucesso!', 'success')
+        # Finaliza o "cabeçalho" do inventário
+        supabase.table('inventarios').update({
+            'status': 'Finalizado',
+            'data_fim': datetime.now(timezone.utc).isoformat(),
+            'usuario_finalizou_id': session['user_id'],
+            'observacoes': observacoes
+        }).eq('id', inventario_id).execute()
+
+        flash(f'Inventário #{inventario_id} finalizado e estoque ajustado com sucesso!', 'success')
+        # Redirecionamento correto para o histórico
+        return redirect(url_for('pagina_historico_inventarios'))
+
     except Exception as e:
         flash(f'Erro ao finalizar o inventário: {e}', 'danger')
-        return redirect(url_for('pagina_inventarios_em_andamento'))
-
-    return redirect(url_for('pagina_historico_inventarios'))
-
+        return redirect(url_for('pagina_revisar_inventario', inventario_id=inventario_id))
+    
 @app.route('/inventarios/historico')
 def pagina_historico_inventarios():
     if session.get('user_role') != 'gestor':

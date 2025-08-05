@@ -75,7 +75,7 @@
 
 <hr>
 
-<form action="{{ url_for('finalizar_inventario') }}" method="post" onsubmit="return confirm('ATENÇÃO: Esta ação é irreversível. O estoque do sistema será ajustado com base nestes números. Deseja continuar?');">
+<form action="{{ url_for('finalizar_inventario', inventario_id=inventario.id) }}" method="post" onsubmit="return confirm('ATENÇÃO: Esta ação é irreversível. O estoque do sistema será ajustado com base nestes números. Deseja continuar?');">
     <input type="hidden" name="inventario_id" value="{{ inventario.id }}">
     <div class="card">
         <div class="card-header">
