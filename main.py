@@ -640,7 +640,6 @@ def pagina_movimentacao(produto_id, tipo):
 def registrar_movimentacao():
     if 'user_id' not in session: return redirect(url_for('login'))
     
-    # --- 1. Captura e Validação Inicial ---
     tipo = request.form['tipo']
     produto_id = int(request.form['produto_id'])
     quantidade_movimentada = float(request.form.get('quantidade', 0))
@@ -649,7 +648,6 @@ def registrar_movimentacao():
         flash('Erro: A quantidade da movimentação deve ser maior que zero.', 'danger')
         return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
     
-    # --- 2. Busca Dados Atuais do Produto ---
     response_produto = supabase.table('produtos').select('estoque_atual, valor_total_estoque, quantidade_com_custo').eq('id', produto_id).limit(1).single().execute()
     produto_atual = response_produto.data
     
@@ -659,7 +657,6 @@ def registrar_movimentacao():
 
     dados_movimentacao = { 'produto_id': produto_id, 'tipo': tipo, 'quantidade': quantidade_movimentada, 'usuario_id': session['user_id'] }
     
-    # --- 3. Lógica Específica para ENTRADA ---
     if tipo == 'entrada':
         custo_unitario_entrada = float(request.form.get('custo_unitario', 0))
         if custo_unitario_entrada < 0:
@@ -680,8 +677,6 @@ def registrar_movimentacao():
         novo_estoque = estoque_antigo + quantidade_movimentada
         novo_valor_total = valor_total_antigo
         nova_quantidade_com_custo = quantidade_com_custo_antiga
-
-        # Lógica correta de Custo Ponderado: só atualiza valor se custo for informado
         if custo_unitario_entrada > 0:
             novo_valor_total += quantidade_movimentada * custo_unitario_entrada
             nova_quantidade_com_custo += quantidade_movimentada
@@ -689,18 +684,15 @@ def registrar_movimentacao():
         dados_produto_update = { 'estoque_atual': novo_estoque, 'valor_total_estoque': novo_valor_total, 'quantidade_com_custo': nova_quantidade_com_custo }
         flash_message = 'Entrada registrada com sucesso!'
 
-    # --- 4. Lógica Específica para SAÍDA ---
     else: # Saída
         if estoque_antigo < quantidade_movimentada:
             flash(f'Erro: Quantidade de saída ({quantidade_movimentada}) é maior que o estoque atual ({estoque_antigo}).', 'danger')
             return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
-
-        # CORREÇÃO PARA CAMPOS OPCIONAIS: Converte string vazia para None
+        
         equipamento_id_str = request.form.get('equipamento_id')
         equipamento_id = int(equipamento_id_str) if equipamento_id_str else None
         colaborador_id_str = request.form.get('colaborador_id')
         colaborador_id = int(colaborador_id_str) if colaborador_id_str else None
-
         custo_medio_atual = valor_total_antigo / quantidade_com_custo_antiga if quantidade_com_custo_antiga > 0 else 0
         
         dados_movimentacao.update({
@@ -712,20 +704,41 @@ def registrar_movimentacao():
 
         novo_estoque = estoque_antigo - quantidade_movimentada
         novo_valor_total = valor_total_antigo - (quantidade_movimentada * custo_medio_atual)
-        # Lógica correta de Custo Ponderado: a base de cálculo (quantidade_com_custo) não muda na saída
         nova_quantidade_com_custo = quantidade_com_custo_antiga
         
         dados_produto_update = { 'estoque_atual': max(0, novo_estoque), 'valor_total_estoque': max(0, novo_valor_total), 'quantidade_com_custo': nova_quantidade_com_custo }
         flash_message = 'Saída registrada com sucesso!'
 
-    # --- 5. Execução no Banco de Dados e Lógica Pós-Movimentação ---
     supabase.table('movimentacoes').insert(dados_movimentacao).execute()
     supabase.table('produtos').update(dados_produto_update).eq('id', produto_id).execute()
     
+    # --- CORREÇÃO: LÓGICA DE BAIXA EM CASCATA RESTAURADA ---
     if tipo == 'entrada' and dados_movimentacao.get('numero_requisicao_alvo'):
-        # Lógica de baixa em cascata que já validamos
-        # ... (código da baixa em cascata) ...
-        pass # Garanta que seu código de baixa em cascata esteja aqui
+        try:
+            saldo_entrada = quantidade_movimentada
+            usos_pendentes = supabase.table('uso_temporario').select('*').eq('numero_requisicao_alvo', dados_movimentacao['numero_requisicao_alvo']).eq('produto_id', produto_id).in_('status', ['Pendente', 'Baixado Parcialmente']).order('id').execute().data
+            
+            for uso in usos_pendentes:
+                if saldo_entrada <= 0: break
+                
+                quantidade_pendente = float(uso['quantidade_usada'])
+                dados_atualizacao_uso = {}
+
+                if saldo_entrada >= quantidade_pendente:
+                    dados_atualizacao_uso['status'] = 'Baixado'
+                    dados_atualizacao_uso['quantidade_usada'] = 0
+                    saldo_entrada -= quantidade_pendente
+                    flash(f'Uso temporário ID {uso["id"]} ({quantidade_pendente} un.) baixado integralmente.', 'info')
+                else:
+                    nova_quantidade_pendente = quantidade_pendente - saldo_entrada
+                    dados_atualizacao_uso['status'] = 'Baixado Parcialmente'
+                    dados_atualizacao_uso['quantidade_usada'] = nova_quantidade_pendente
+                    saldo_entrada = 0
+                    flash(f'Uso temporário ID {uso["id"]} baixado parcialmente. Restam {nova_quantidade_pendente} un. pendentes.', 'info')
+                
+                supabase.table('uso_temporario').update(dados_atualizacao_uso).eq('id', uso['id']).execute()
+        except Exception as e:
+            print(f"DEBUG: Não foi possível realizar a baixa automática. Erro: {e}")
 
     flash(flash_message, 'success')
     return redirect(url_for('pagina_estoque'))
