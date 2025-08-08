@@ -11,19 +11,14 @@
         <input type="hidden" name="usuario_id" value="{{ usuario.id }}">
         <div class="card">
             <div class="card-body">
+                <div class="mb-3"><label for="nome" class="form-label">Nome:</label><input type="text" class="form-control" id="nome" name="nome" value="{{ usuario.nome }}" required></div>
+                <div class="mb-3"><label for="email" class="form-label">E-mail:</label><input type="email" class="form-control" id="email" name="email" value="{{ usuario.email }}" required></div>
                 <div class="mb-3">
-                    <label for="nome" class="form-label">Nome:</label>
-                    <input type="text" class="form-control" id="nome" name="nome" value="{{ usuario.nome }}" required>
-                </div>
-                <div class="mb-3">
-                    <label for="email" class="form-label">E-mail:</label>
-                    <input type="email" class="form-control" id="email" name="email" value="{{ usuario.email }}" required>
-                </div>
-                <div class="mb-3">
-                    <label for="role" class="form-label">Função:</label>
-                    <select class="form-select" id="role" name="role">
-                        <option value="almoxarife" {% if usuario.role == 'almoxarife' %}selected{% endif %}>Almoxarife</option>
-                        <option value="gestor" {% if usuario.role == 'gestor' %}selected{% endif %}>Gestor</option>
+                    <label for="funcao_id" class="form-label">Função:</label>
+                    <select class="form-select" id="funcao_id" name="funcao_id" required>
+                        {% for funcao in todas_funcoes %}
+                        <option value="{{ funcao.id }}" {% if usuario.funcao_id == funcao.id %}selected{% endif %}>{{ funcao.nome_funcao }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <p class="text-muted"><small>Obs: A alteração de senha deve ser feita em um módulo separado por segurança.</small></p>

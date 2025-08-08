@@ -110,68 +110,127 @@ def logout():
     return redirect(url_for('login'))
 
 # --- ROTAS DE GERENCIAMENTO (CADASTROS) ---
+# ===== ROTAS CORRIGIDAS PARA O MÓDULO DE USUÁRIOS =====
+
+# ===== ROTAS CORRIGIDAS E COMPLETAS PARA O MÓDULO DE USUÁRIOS =====
+
 @app.route('/usuarios')
 def pagina_usuarios():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    if session.get('user_role') != 'gestor':
-        flash('Acesso negado: você não tem permissão para gerenciar usuários.', 'danger')
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        flash('Acesso negado.', 'danger')
         return redirect(url_for('pagina_inicial'))
-    response = supabase.table('usuarios').select('*').order('id').execute()
-    usuarios = response.data
-    return render_template('usuarios.html', usuarios=usuarios)
+    
+    # Busca usuários E o nome da função relacionada
+    try:
+        response = supabase.table('usuarios').select('*, funcoes(nome_funcao)').order('id').execute()
+        usuarios = response.data
+        
+        # Busca todas as funções disponíveis para o formulário de adicionar
+        response_funcoes = supabase.table('funcoes').select('*').execute()
+        todas_funcoes = response_funcoes.data
+    except Exception as e:
+        flash(f'Erro ao carregar dados de usuários: {e}', 'danger')
+        usuarios = []
+        todas_funcoes = []
+    
+    return render_template('usuarios.html', usuarios=usuarios, todas_funcoes=todas_funcoes)
 
 @app.route('/usuarios/adicionar', methods=['POST'])
 def adicionar_usuario():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
-    email = request.form['email']
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        return redirect(url_for('pagina_inicial'))
+    
+    email = request.form['email'].strip()
     response_check = supabase.table('usuarios').select('id').eq('email', email).execute()
     if response_check.data:
         flash('Erro: O e-mail informado já está cadastrado.', 'danger')
         return redirect(url_for('pagina_usuarios'))
     
-    dados_novo_usuario = {
-    'nome': padronizar_texto(request.form['nome']),
-    'email': request.form['email'].strip(),
-    'senha': generate_password_hash(request.form['senha']), # <-- CORRIGIDO E SEGURO
-    'role': request.form['role']
-}
-    supabase.table('usuarios').insert(dados_novo_usuario).execute()
-    flash('Novo usuário cadastrado com sucesso!', 'success')
+    try:
+        funcao_id_selecionada = request.form.get('funcao_id')
+        if not funcao_id_selecionada:
+            flash('Erro: Uma função deve ser selecionada.', 'danger')
+            return redirect(url_for('pagina_usuarios'))
+
+        dados_novo_usuario = {
+            'nome': padronizar_texto(request.form['nome']),
+            'email': email,
+            'senha': generate_password_hash(request.form['senha']),
+            'funcao_id': int(funcao_id_selecionada)
+        }
+        supabase.table('usuarios').insert(dados_novo_usuario).execute()
+        flash('Novo usuário cadastrado com sucesso!', 'success')
+
+    except Exception as e:
+        flash(f'Ocorreu um erro ao cadastrar o usuário: {e}', 'danger')
+
     return redirect(url_for('pagina_usuarios'))
 
 @app.route('/usuario/editar/<int:usuario_id>')
 def pagina_editar_usuario(usuario_id):
-    # if 'user_id' not in session: return redirect(url_for('login'))
-    # if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
-    response = supabase.table('usuarios').select('*').eq('id', usuario_id).single().execute()
-    usuario = response.data
-    return render_template('editar_usuario.html', usuario=usuario)
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        return redirect(url_for('pagina_inicial'))
+
+    try:
+        response_usuario = supabase.table('usuarios').select('*').eq('id', usuario_id).single().execute()
+        usuario = response_usuario.data
+        
+        response_funcoes = supabase.table('funcoes').select('*').execute()
+        todas_funcoes = response_funcoes.data
+        
+        return render_template('editar_usuario.html', usuario=usuario, todas_funcoes=todas_funcoes)
+    except Exception as e:
+        flash(f'Erro ao carregar dados do usuário: {e}', 'danger')
+        return redirect(url_for('pagina_usuarios'))
 
 @app.route('/usuario/salvar_edicao', methods=['POST'])
 def salvar_edicao_usuario():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
-    usuario_id = request.form['usuario_id']
-    dados = { 
-        'nome': padronizar_texto(request.form['nome']), # PADRONIZADO
-        'email': request.form['email'].strip(),
-        'role': request.form['role'] 
-    }
-    supabase.table('usuarios').update(dados).eq('id', usuario_id).execute()
-    flash('Usuário atualizado com sucesso!', 'success')
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        return redirect(url_for('pagina_inicial'))
+        
+    try:
+        usuario_id = request.form['usuario_id']
+        funcao_id_selecionada = request.form.get('funcao_id')
+        if not funcao_id_selecionada:
+            flash('Erro: Uma função deve ser selecionada.', 'danger')
+            return redirect(url_for('pagina_editar_usuario', usuario_id=usuario_id))
+
+        dados = { 
+            'nome': padronizar_texto(request.form['nome']),
+            'email': request.form['email'].strip(),
+            'funcao_id': int(funcao_id_selecionada)
+        }
+        supabase.table('usuarios').update(dados).eq('id', usuario_id).execute()
+        flash('Usuário atualizado com sucesso!', 'success')
+    except Exception as e:
+        flash(f'Ocorreu um erro ao atualizar o usuário: {e}', 'danger')
+
     return redirect(url_for('pagina_usuarios'))
 
-@app.route('/usuario/excluir/<int:usuario_id>')
+@app.route('/usuario/excluir/<int:usuario_id>', methods=['POST'])
 def excluir_usuario(usuario_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        return redirect(url_for('login'))
+        
     if session['user_id'] == usuario_id:
         flash('Ação inválida: você não pode excluir sua própria conta.', 'danger')
         return redirect(url_for('pagina_usuarios'))
-    supabase.table('usuarios').delete().eq('id', usuario_id).execute()
-    flash('Usuário excluído com sucesso.', 'success')
+    
+    try:
+        # Trava de segurança: impede excluir usuário com histórico de movimentações
+        movimentacoes = supabase.table('movimentacoes').select('id', count='exact').eq('usuario_id', usuario_id).execute()
+        if movimentacoes.count > 0:
+            flash('Este usuário não pode ser excluído, pois possui um histórico de movimentações.', 'danger')
+            return redirect(url_for('pagina_usuarios'))
+        
+        supabase.table('usuarios').delete().eq('id', usuario_id).execute()
+        flash('Usuário excluído com sucesso.', 'success')
+    except Exception as e:
+        flash(f'Erro ao excluir usuário: {e}', 'danger')
+
     return redirect(url_for('pagina_usuarios'))
+
+# ===== ROTAS CORRIGIDAS PARA FORNECEDORES =====
 
 @app.route('/fornecedores')
 def pagina_fornecedores():
@@ -200,8 +259,9 @@ def adicionar_fornecedor():
         flash('Erro: O CNPJ informado já está cadastrado.', 'danger')
         return redirect(url_for('pagina_fornecedores'))
 
+    # CORREÇÃO: Usando 'nome_fornecedor'
     dados_novo_fornecedor = { 
-        'razao_social': padronizar_texto(request.form['razao_social']),
+        'nome_fornecedor': padronizar_texto(request.form['nome_fornecedor']),
         'cnpj': cnpj_limpo 
     }
     supabase.table('fornecedores').insert(dados_novo_fornecedor).execute()
@@ -214,7 +274,6 @@ def pagina_editar_fornecedor(fornecedor_id):
     if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
     response = supabase.table('fornecedores').select('*').eq('id', fornecedor_id).single().execute()
     fornecedor = response.data
-    if fornecedor and fornecedor.get('cnpj'): fornecedor['cnpj'] = formata_cnpj(fornecedor['cnpj'])
     return render_template('editar_fornecedor.html', fornecedor=fornecedor)
 
 @app.route('/fornecedor/salvar_edicao', methods=['POST'])
@@ -224,25 +283,40 @@ def salvar_edicao_fornecedor():
     fornecedor_id = request.form['fornecedor_id']
     cnpj_limpo = ''.join(filter(str.isdigit, request.form['cnpj']))
 
-    # VALIDAÇÃO DE TAMANHO DO CNPJ
     if len(cnpj_limpo) != 14:
         flash('Erro: O CNPJ deve conter 14 dígitos.', 'danger')
         return redirect(url_for('pagina_editar_fornecedor', fornecedor_id=fornecedor_id))
 
+    # CORREÇÃO: Usando 'nome_fornecedor'
     dados = { 
-        'razao_social': padronizar_texto(request.form['razao_social']), # PADRONIZADO
+        'nome_fornecedor': padronizar_texto(request.form['nome_fornecedor']),
         'cnpj': cnpj_limpo 
     }
     supabase.table('fornecedores').update(dados).eq('id', fornecedor_id).execute()
     flash('Fornecedor atualizado com sucesso!', 'success')
     return redirect(url_for('pagina_fornecedores'))
 
-@app.route('/fornecedor/excluir/<int:fornecedor_id>')
+# A sua função excluir_fornecedor já está correta e não precisa de alterações.
+
+@app.route('/fornecedor/excluir/<int:fornecedor_id>', methods=['POST'])
 def excluir_fornecedor(fornecedor_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    if session.get('user_role') != 'gestor': return redirect(url_for('pagina_inicial'))
-    supabase.table('fornecedores').delete().eq('id', fornecedor_id).execute()
-    flash('Fornecedor excluído com sucesso!', 'success')
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
+        return redirect(url_for('login'))
+    
+    try:
+        # Trava de segurança: Verifica se o fornecedor tem movimentações de entrada
+        movimentacoes = supabase.table('movimentacoes').select('id', count='exact').eq('fornecedor_id', fornecedor_id).execute()
+        if movimentacoes.count > 0:
+            flash('Este fornecedor não pode ser excluído pois possui um histórico de entradas no estoque.', 'danger')
+            return redirect(url_for('pagina_fornecedores'))
+
+        # Se não houver movimentações, pode excluir
+        supabase.table('fornecedores').delete().eq('id', fornecedor_id).execute()
+        flash('Fornecedor excluído com sucesso!', 'success')
+
+    except Exception as e:
+        flash(f'Erro ao excluir fornecedor: {e}', 'danger')
+
     return redirect(url_for('pagina_fornecedores'))
 
 @app.route('/categorias')
@@ -407,7 +481,6 @@ def pagina_inicial():
     todas_categorias = supabase.table('categorias').select('id, nome_categoria').order('nome_categoria').execute().data
     
     return render_template('index.html', kpis=kpis, filtros=filtros, todas_categorias=todas_categorias)
-
 
 @app.route('/estoque')
 def pagina_estoque():
@@ -705,9 +778,9 @@ def registrar_movimentacao():
 
         novo_estoque = estoque_antigo - quantidade_movimentada
         novo_valor_total = valor_total_antigo - (quantidade_movimentada * custo_medio_atual)
-        nova_quantidade_com_custo = quantidade_com_custo_antiga
+        nova_quantidade_com_custo = quantidade_com_custo_antiga - quantidade_movimentada
         
-        dados_produto_update = { 'estoque_atual': max(0, novo_estoque), 'valor_total_estoque': max(0, novo_valor_total), 'quantidade_com_custo': nova_quantidade_com_custo }
+        dados_produto_update = { 'estoque_atual': max(0, novo_estoque), 'valor_total_estoque': max(0, novo_valor_total), 'quantidade_com_custo': max(0, nova_quantidade_com_custo) }
         flash_message = 'Saída registrada com sucesso!'
 
     supabase.table('movimentacoes').insert(dados_movimentacao).execute()
@@ -965,21 +1038,30 @@ def exportar_historico_csv():
     output.headers["Content-type"] = "text/csv; charset=utf-8-sig"
     return output
 
-# ===== FUNÇÃO MOTOR PARA CÁLCULO DE VALORAÇÃO DE ESTOQUE (VERSÃO FINANCEIRA) =====
+# ===== FUNÇÃO MOTOR PARA CÁLCULO DE POSIÇÃO DE ESTOQUE
 def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, produtos_ids=None):
+    print("\n--- INICIANDO 'calcular_posicao_estoque_data' ---")
+    print(f"Filtros recebidos: data_inicio={data_inicio}, data_fim={data_fim}, produtos_ids={produtos_ids}")
+    
     try:
         query = supabase.table('produtos').select('*, categorias!left(nome_categoria)')
         if categorias_ids: query = query.in_('categoria_id', categorias_ids)
         if produtos_ids: query = query.in_('id', produtos_ids)
         produtos = query.execute().data
         
-        if not produtos: return []
+        if not produtos: 
+            print("--- FINALIZANDO: Nenhum produto encontrado com os filtros.")
+            return []
         
+        print(f"--- DEBUG: {len(produtos)} produtos encontrados.")
         ids_dos_produtos_filtrados = [p['id'] for p in produtos]
         movimentacoes = supabase.table('movimentacoes').select('*').in_('produto_id', ids_dos_produtos_filtrados).lte('created_at', data_fim + 'T23:59:59').order('created_at').execute().data
+        print(f"--- DEBUG: {len(movimentacoes)} movimentações totais encontradas para estes produtos.")
 
         resultado_final = []
         for produto in produtos:
+            print(f"\n--- Processando Produto ID: {produto['id']} - {produto['descricao']} ---")
+            
             dados_relatorio = {
                 'id': produto['id'], 'descricao': produto['descricao'],
                 'codigo_sustentare': produto.get('codigo_sustentare'), 'codigo_valor': produto.get('codigo_valor'),
@@ -989,26 +1071,33 @@ def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, pr
                 'saidas_qtd': 0.0, 'saidas_valor': 0.0,
             }
             qtd_custo_inicial = 0.0
+
+            print("--- Calculando Saldo Inicial (movimentações ANTES de data_inicio)...")
             for mov in movimentacoes:
                 data_mov_str = mov.get('created_at', '')[:10]
                 if mov.get('produto_id') == produto['id'] and data_mov_str and data_mov_str < data_inicio:
                     quantidade = float(mov.get('quantidade', 0) or 0)
                     preco_unit = float(mov.get('preco_unitario', 0) or 0)
+                    
                     if mov.get('tipo') == 'entrada':
                         dados_relatorio['inicial_qtd'] += quantidade
                         if preco_unit > 0:
                             dados_relatorio['inicial_valor'] += quantidade * preco_unit
                             qtd_custo_inicial += quantidade
-                    else:
+                        print(f"  -> [INICIAL] Data: {data_mov_str}, Tipo: Entrada, Qtd: {quantidade}. Saldo Qtd: {dados_relatorio['inicial_qtd']}, Saldo Valor: {dados_relatorio['inicial_valor']:.2f}")
+                    else: # Saída
                         custo_medio_ate_entao = dados_relatorio['inicial_valor'] / qtd_custo_inicial if qtd_custo_inicial > 0 else 0
                         dados_relatorio['inicial_qtd'] -= quantidade
                         dados_relatorio['inicial_valor'] -= quantidade * custo_medio_ate_entao
-            
+                        qtd_custo_inicial -= quantidade
+                        print(f"  -> [INICIAL] Data: {data_mov_str}, Tipo: Saída, Qtd: {quantidade} ao CMP de {custo_medio_ate_entao:.2f}. Saldo Qtd: {dados_relatorio['inicial_qtd']}, Saldo Valor: {dados_relatorio['inicial_valor']:.2f}")
+
             dados_relatorio['inicial_cmp'] = dados_relatorio['inicial_valor'] / dados_relatorio['inicial_qtd'] if dados_relatorio['inicial_qtd'] > 0 else 0
-            
+            print(f"--- Saldo Inicial Finalizado: Qtd={dados_relatorio['inicial_qtd']}, Valor={dados_relatorio['inicial_valor']:.2f}, CMP={dados_relatorio['inicial_cmp']:.2f}")
+
             valor_corrente = dados_relatorio['inicial_valor']
             qtd_custo_corrente = qtd_custo_inicial
-
+            print(f"--- Calculando Movimentações do Período (iniciando com Valor Corrente: {valor_corrente:.2f}, Qtd Custo: {qtd_custo_corrente})...")
             for mov in movimentacoes:
                 data_mov_str = mov.get('created_at', '')[:10]
                 if mov.get('produto_id') == produto['id'] and data_mov_str and data_inicio <= data_mov_str <= data_fim:
@@ -1020,12 +1109,15 @@ def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, pr
                         if preco_unit > 0:
                             valor_corrente += quantidade * preco_unit
                             qtd_custo_corrente += quantidade
-                    else:
+                        print(f"  -> [PERÍODO] Data: {data_mov_str}, Tipo: Entrada, Qtd: {quantidade}. Valor Corrente: {valor_corrente:.2f}")
+                    else: # Saída
                         custo_medio_no_momento_da_saida = valor_corrente / qtd_custo_corrente if qtd_custo_corrente > 0 else 0
                         dados_relatorio['saidas_qtd'] += quantidade
                         dados_relatorio['saidas_valor'] += quantidade * custo_medio_no_momento_da_saida
                         valor_corrente -= quantidade * custo_medio_no_momento_da_saida
-
+                        qtd_custo_corrente -= quantidade
+                        print(f"  -> [PERÍODO] Data: {data_mov_str}, Tipo: Saída, Qtd: {quantidade} ao CMP de {custo_medio_no_momento_da_saida:.2f}. Valor Corrente: {valor_corrente:.2f}")
+            
             dados_relatorio['entradas_cmp'] = dados_relatorio['entradas_valor'] / dados_relatorio['entradas_qtd'] if dados_relatorio['entradas_qtd'] > 0 else 0
             dados_relatorio['saidas_cmp'] = dados_relatorio['saidas_valor'] / dados_relatorio['saidas_qtd'] if dados_relatorio['saidas_qtd'] > 0 else 0
             
@@ -1034,9 +1126,11 @@ def calcular_posicao_estoque_data(data_inicio, data_fim, categorias_ids=None, pr
             dados_relatorio['final_cmp'] = dados_relatorio['final_valor'] / dados_relatorio['final_qtd'] if dados_relatorio['final_qtd'] > 0 else 0
             
             resultado_final.append(dados_relatorio)
+        
+        print(f"--- FINALIZANDO: {len(resultado_final)} produtos processados.")
         return resultado_final
     except Exception as e:
-        print(f"Erro ao calcular posição de estoque: {e}")
+        print(f"\n!!!!!! ERRO CRÍTICO DENTRO DA FUNÇÃO: {e} !!!!!!\n")
         return []
 
 @app.route('/relatorios/posicao_estoque')
@@ -1176,32 +1270,31 @@ def pagina_contagem_inventario(inventario_id):
 
 @app.route('/inventario/salvar_contagem', methods=['POST'])
 def salvar_contagem_inventario():
-    if 'user_id' not in session: return redirect(url_for('login'))
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     
     inventario_id = request.form.get('inventario_id')
-    updates = []
-
-    for key, value in request.form.items():
-        if key.startswith('qtd_contada_'):
-            if value and value.strip():
-                produto_id = key.split('_')[-1]
-                qtd_teorica_str = request.form.get(f'qtd_teorica_{produto_id}')
-                
-                updates.append({
-                    'inventario_id': int(inventario_id),
-                    'produto_id': int(produto_id),
-                    # --- CORREÇÃO APLICADA ---
-                    # Convertemos para float primeiro, depois para int
-                    'quantidade_teorica': int(float(qtd_teorica_str)),
-                    'quantidade_contada': int(float(value)),
-                    # --- FIM DA CORREÇÃO ---
-                    'usuario_contou_id': session['user_id']
-                })
     
     try:
-        if updates:
-            supabase.table('inventario_itens').upsert(updates, on_conflict='inventario_id, produto_id').execute()
+        # 1. Busca todos os itens que pertencem a este inventário
+        response_itens = supabase.table('inventario_itens').select('id, produto_id').eq('inventario_id', inventario_id).execute()
+        itens_do_inventario = response_itens.data
+
+        # 2. Faz um loop por cada item e o ATUALIZA individualmente, se necessário
+        for item in itens_do_inventario:
+            quantidade_contada_str = request.form.get(f"quantidade_{item['id']}")
+            
+            # Se um valor foi digitado para este item, atualiza apenas ele
+            if quantidade_contada_str and quantidade_contada_str.strip():
+                dados_para_atualizar = {
+                    'quantidade_contada': float(quantidade_contada_str),
+                    'usuario_contou_id': session['user_id']
+                }
+                # Executa o UPDATE para este item específico, usando seu ID
+                supabase.table('inventario_itens').update(dados_para_atualizar).eq('id', item['id']).execute()
+        
         flash('Progresso do inventário salvo com sucesso!', 'success')
+
     except Exception as e:
         flash(f'Erro ao salvar progresso: {e}', 'danger')
 
@@ -1335,21 +1428,22 @@ def pagina_historico_inventarios():
 
     return render_template('historico_inventarios.html', inventarios=inventarios)
 
-@app.route('/inventario/<int:inventario_id>/detalhes')
+# ===== Funções Corrigidas para Detalhe de Inventário =====
+
+@app.route('/inventario/detalhes/<int:inventario_id>')
 def pagina_detalhe_inventario(inventario_id):
-    if session.get('user_role') != 'gestor':
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
         flash('Acesso negado.', 'danger')
         return redirect(url_for('pagina_inicial'))
 
     try:
-        # Busca o cabeçalho do inventário e os nomes de ambos os usuários (início e fim)
         response_inv = supabase.table('inventarios').select(
             '*, usuario_iniciou:usuarios!inventarios_usuario_iniciou_id_fkey(nome), usuario_finalizou:usuarios!inventarios_usuario_finalizou_id_fkey(nome)'
         ).eq('id', inventario_id).single().execute()
         inventario = response_inv.data
         
-        # Busca os itens do inventário
-        response_itens = supabase.table('inventario_itens').select('*, produtos(*)').eq('inventario_id', inventario_id).order('id').execute()
+        # CORREÇÃO: Busca os códigos corretos dos produtos
+        response_itens = supabase.table('inventario_itens').select('*, produtos(descricao, codigo_sustentare, codigo_valor)').eq('inventario_id', inventario_id).order('id').execute()
         itens_inventario = response_itens.data
 
     except Exception as e:
@@ -1403,7 +1497,7 @@ def exportar_posicao_estoque_csv():
 
 @app.route('/inventario/detalhes/exportar_csv')
 def exportar_detalhe_inventario_csv():
-    if session.get('user_role') != 'gestor':
+    if 'user_id' not in session or session.get('user_role') != 'gestor':
         return redirect(url_for('pagina_inicial'))
 
     inventario_id = request.args.get('inventario_id')
@@ -1412,43 +1506,40 @@ def exportar_detalhe_inventario_csv():
         return redirect(url_for('pagina_historico_inventarios'))
 
     try:
-        # Busca os itens do inventário para o relatório
-        response_itens = supabase.table('inventario_itens').select('*, produtos(*)').eq('inventario_id', inventario_id).order('id').execute()
+        # CORREÇÃO: Busca os códigos corretos dos produtos
+        response_itens = supabase.table('inventario_itens').select('*, produtos(descricao, codigo_sustentare, codigo_valor)').eq('inventario_id', inventario_id).order('id').execute()
         itens_inventario = response_itens.data
 
-        # Geração do CSV em memória
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=';')
+        si = io.StringIO()
+        writer = csv.writer(si, delimiter=';')
         
-        # Escreve o cabeçalho
-        writer.writerow(['ID Produto', 'Cód. Interno', 'Descrição', 'Qtd. Teórica', 'Qtd. Contada', 'Diferença'])
+        # CORREÇÃO: Cabeçalho do CSV atualizado
+        writer.writerow(['ID Produto', 'Cód. Sustentare', 'Cód. Valor', 'Descrição', 'Qtd. Teórica', 'Qtd. Contada', 'Diferença'])
         
-        # Escreve os dados
         for item in itens_inventario:
             produto = item.get('produtos', {})
             qtd_contada = item.get('quantidade_contada')
             qtd_teorica = item.get('quantidade_teorica')
             diferenca = ''
-
             if qtd_contada is not None and qtd_teorica is not None:
-                diferenca = qtd_contada - qtd_teorica
+                diferenca = float(qtd_contada) - float(qtd_teorica)
 
+            # CORREÇÃO: Linhas do CSV com os dados corretos
             writer.writerow([
                 produto.get('id', 'N/A'),
                 produto.get('codigo_sustentare', 'N/A'),
+                produto.get('codigo_valor', 'N/A'),
                 produto.get('descricao', 'N/A'),
                 qtd_teorica,
                 qtd_contada if qtd_contada is not None else 'NÃO CONTADO',
                 diferenca
             ])
         
-        output.seek(0)
-        
-        return Response(
-            output.getvalue().encode('utf-8-sig'),
-            mimetype="text/csv",
-            headers={"Content-Disposition": f"attachment;filename=inventario_{inventario_id}_detalhes.csv"}
-        )
+        csv_bytes = si.getvalue().encode('utf-8-sig')
+        output = make_response(csv_bytes)
+        output.headers["Content-Disposition"] = f"attachment;filename=inventario_{inventario_id}_detalhes.csv"
+        output.headers["Content-type"] = "text/csv; charset=utf-8-sig"
+        return output
 
     except Exception as e:
         flash(f'Erro ao gerar o relatório CSV: {e}', 'danger')

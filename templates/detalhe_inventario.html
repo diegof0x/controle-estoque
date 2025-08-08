@@ -1,6 +1,6 @@
 {% extends "layout_base.html" %}
 
-{% block title %}Detalhes do Inventário #{{ inventario.id }} - Controle Total{% endblock %}
+{% block title %}Detalhes do Inventário #{{ inventario.id }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -8,18 +8,16 @@
     <div>
         <a href="{{ url_for('pagina_historico_inventarios') }}" class="btn btn-secondary">Voltar ao Histórico</a>
         <a href="{{ url_for('exportar_detalhe_inventario_csv', inventario_id=inventario.id) }}" class="btn btn-success">
-            <i class="bi bi-file-earmark-excel-fill me-2"></i>Exportar para CSV
+            <i class="bi bi-download"></i> Exportar para CSV
         </a>
     </div>
 </div>
 
 <div class="card mb-4">
-    <div class="card-header">
-        Resumo do Inventário
-    </div>
+    <div class="card-header">Resumo do Inventário</div>
     <div class="card-body">
         <div class="row">
-            <div class="col-md-4">
+            <div class="col-md-6">
                 <p class="mb-1"><strong>Status:</strong> 
                     {% if inventario.status == 'Finalizado' %}
                         <span class="badge bg-success">{{ inventario.status }}</span>
@@ -27,28 +25,27 @@
                         <span class="badge bg-secondary">{{ inventario.status }}</span>
                     {% endif %}
                 </p>
-                <p class="mb-0"><strong>Iniciado em:</strong> {{ convert_utc_to_local(inventario.data_inicio) }} por <strong>{{ inventario.usuario_iniciou.nome if inventario.usuario_iniciou else 'N/A' }}</strong></p>
+                <p class="mb-0"><strong>Iniciado por:</strong> {{ (inventario.get('usuario_iniciou') or {}).get('nome', 'N/A') }} em {{ inventario.data_inicio | format_datetime }}</p>
                 {% if inventario.data_fim %}
-                <p class="mb-0"><strong>Finalizado em:</strong> {{ convert_utc_to_local(inventario.data_fim) }} por <strong>{{ inventario.usuario_finalizou.nome if inventario.usuario_finalizou else 'N/A' }}</strong></p>
+                <p class="mb-0"><strong>Finalizado por:</strong> {{ (inventario.get('usuario_finalizou') or {}).get('nome', 'N/A') }} em {{ inventario.data_fim | format_datetime }}</p>
                 {% endif %}
             </div>
-            <div class="col-md-8">
+            <div class="col-md-6">
                 <p class="mb-1"><strong>Observações Finais:</strong></p>
-                <p class="text-muted fst-italic">
-                    {{ inventario.observacoes if inventario.observacoes else "Nenhuma observação foi registrada." }}
-                </p>
+                <p class="text-muted fst-italic">{{ inventario.observacoes if inventario.observacoes else "Nenhuma observação foi registrada." }}</p>
             </div>
         </div>
     </div>
 </div>
 
-
-<h2 class="h4">Relatório de Divergências</h2>
+<h2 class="h4">Itens do Inventário</h2>
 <div class="table-responsive">
     <table class="table table-bordered table-sm">
         <thead class="table-light">
             <tr>
                 <th>Produto</th>
+                <th class="text-center">Cód. Sustentare</th>
+                <th class="text-center">Cód. Valor</th>
                 <th class="text-center">Estoque Teórico</th>
                 <th class="text-center">Qtd. Contada</th>
                 <th class="text-center">Diferença</th>
@@ -56,32 +53,23 @@
         </thead>
         <tbody>
             {% for item in itens_inventario %}
-            <tr class="{% if item.quantidade_contada is not none and item.quantidade_contada != item.quantidade_teorica %}table-warning{% endif %}">
-                <td>
-                    {{ item.produtos.descricao if item.produtos else 'N/A' }}
-                    <small class="d-block text-muted">Cód: {{ item.produtos.codigo_sustentare if item.produtos }}</small>
-                </td>
+             <tr>
+                <td>{{ (item.get('produtos') or {}).get('descricao', 'N/A') }}</td>
+                <td class="text-center align-middle">{{ (item.get('produtos') or {}).get('codigo_sustentare', 'N/A') }}</td>
+                <td class="text-center align-middle">{{ (item.get('produtos') or {}).get('codigo_valor', 'N/A') }}</td>
                 <td class="text-center align-middle">{{ item.quantidade_teorica }}</td>
                 <td class="text-center align-middle">
-                    {% if item.quantidade_contada is not none %}
-                        {{ item.quantidade_contada }}
-                    {% else %}
-                        <span class="text-muted"><em>Não contado</em></span>
-                    {% endif %}
+                    {% if item.quantidade_contada is not none %}{{ item.quantidade_contada }}{% else %}<span class="text-muted"><em>Não contado</em></span>{% endif %}
                 </td>
                 <td class="text-center align-middle">
                     {% if item.quantidade_contada is not none %}
-                        {% set diferenca = item.quantidade_contada - item.quantidade_teorica %}
-                        <span class="badge {% if diferenca > 0 %}bg-success{% elif diferenca < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
-                            {{ '+' if diferenca > 0 }}{{ diferenca }}
-                        </span>
-                    {% else %}
-                        -
-                    {% endif %}
+                        {% set diferenca = item.quantidade_contada|float - item.quantidade_teorica|float %}
+                        <span class="badge {% if diferenca > 0 %}bg-success{% elif diferenca < 0 %}bg-danger{% else %}bg-secondary{% endif %}">{{ '+' if diferenca > 0 }}{{ "%.2f"|format(diferenca) }}</span>
+                    {% else %}-{% endif %}
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="4" class="text-center">Nenhum item neste inventário.</td></tr>
+            <tr><td colspan="6" class="text-center">Nenhum item neste inventário.</td></tr>
             {% endfor %}
         </tbody>
     </table>

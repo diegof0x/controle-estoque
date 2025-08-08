@@ -12,12 +12,12 @@
         <div class="card-body">
             <form action="{{ url_for('adicionar_fornecedor') }}" method="post">
                 <div class="mb-3">
-                    <label for="razao_social" class="form-label">Razão Social:</label>
-                    <input type="text" class="form-control" id="razao_social" name="razao_social" required>
+                    <label for="nome_fornecedor" class="form-label">Nome do Fornecedor:</label>
+                    <input type="text" class="form-control" id="nome_fornecedor" name="nome_fornecedor" required>
                 </div>
                 <div class="mb-3">
                     <label for="cnpj" class="form-label">CNPJ:</label>
-                    <input type="text" class="form-control" id="cnpj" name="cnpj" required maxlength="18" placeholder="Digite apenas os números">
+                    <input type="text" class="form-control" id="cnpj" name="cnpj" maxlength="18" placeholder="Digite apenas os números">
                 </div>
                 <button type="submit" class="btn btn-primary">Adicionar Fornecedor</button>
             </form>
@@ -30,7 +30,7 @@
             <thead class="table-light">
                 <tr>
                     <th>ID</th>
-                    <th>Razão Social</th>
+                    <th>Nome do Fornecedor</th>
                     <th>CNPJ</th>
                     {% if session.user_role == 'gestor' %}<th>Ações</th>{% endif %}
                 </tr>
@@ -39,12 +39,14 @@
                 {% for fornecedor in fornecedores %}
                 <tr>
                     <td>{{ fornecedor.id }}</td>
-                    <td>{{ fornecedor.razao_social }}</td>
+                    <td>{{ fornecedor.nome_fornecedor }}</td>
                     <td>{{ fornecedor.cnpj }}</td>
                     {% if session.user_role == 'gestor' %}
-                    <td>
-                        <a href="{{ url_for('pagina_editar_fornecedor', fornecedor_id=fornecedor.id) }}" class="btn btn-secondary btn-sm"><i class="bi bi-pencil-square"></i></a>
-                        <a href="{{ url_for('excluir_fornecedor', fornecedor_id=fornecedor.id) }}" onclick="return confirm('Tem certeza?');" class="btn btn-danger btn-sm"><i class="bi bi-trash-fill"></i></a>
+                    <td class="text-end">
+                        <a href="{{ url_for('pagina_editar_fornecedor', fornecedor_id=fornecedor.id) }}" class="btn btn-warning btn-sm"><i class="bi bi-pencil-square"></i></a>
+                        <form action="{{ url_for('excluir_fornecedor', fornecedor_id=fornecedor.id) }}" method="post" class="d-inline" onsubmit="return confirm('Tem certeza?');">
+                           <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash-fill"></i></button>
+                        </form>
                     </td>
                     {% endif %}
                 </tr>
@@ -52,9 +54,12 @@
             </tbody>
         </table>
     </div>
+{% endblock %}
 
-    <script>
-        const cnpjInput = document.getElementById('cnpj');
+{% block scripts_extra %}
+<script>
+    const cnpjInput = document.getElementById('cnpj');
+    if (cnpjInput) {
         cnpjInput.addEventListener('input', function (e) {
             let value = e.target.value.replace(/\D/g, '');
             if (value.length > 14) value = value.slice(0, 14);
@@ -64,5 +69,6 @@
             value = value.replace(/(\d{4})(\d)/, '$1-$2');
             e.target.value = value;
         });
-    </script>
+    }
+</script>
 {% endblock %}

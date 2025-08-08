@@ -8,6 +8,12 @@
 {% endblock %}
 
 {% block content %}
+<div class="alert alert-warning d-flex align-items-center" role="alert">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+    <div>
+        <strong>ATENÇÃO:</strong> Devido à ENTRADA inicial que foi realizado via INVENTÁRIO sem custeio, o cálculo do Custo Médio e Valor Total precisará sem construido posteriormente. Os valores nesta tela são temporários e ilustrativos.
+    </div>
+</div>
 <div class="page-header">
     <h1>Relatório de Valoração de Estoque</h1>
     <a href="{{ url_for('exportar_posicao_estoque_csv', **filtros) }}" class="btn btn-secondary">
