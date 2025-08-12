@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, session, flash, Response, make_response
 from supabase import create_client, Client
 import csv
@@ -21,15 +23,22 @@ def format_datetime_filter(value):
         # Se o valor não for uma data válida, retorna o original sem quebrar a página
         return value
 
-# --- Bloco de Conexão com Supabase ---
-SUPABASE_URL = "https://bblwsqlelbrhotnnxxxt.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJibHdzcWxlbGJyaG90bm54eHh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTMzODQ2ODUsImV4cCI6MjA2ODk2MDY4NX0.dwW0UQdiGD16TDbP-hAYK3CAg1UbboxUKw-fhH3_shA"
-
+# --- Bloco Único e Correto de Conexão com Supabase ---
 try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("Conexão com Supabase bem-sucedida!")
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+
+    # Se a url ou a chave não forem encontradas, gera um erro claro.
+    if not url or not key:
+        raise ValueError("ERRO CRÍTICO: Variáveis SUPABASE_URL e/ou SUPABASE_KEY não encontradas. Verifique seu arquivo .env")
+
+    # Se tudo estiver ok, cria o cliente de conexão.
+    supabase: Client = create_client(url, key)
+    print(">>> Conexão com o banco de dados estabelecida com sucesso!")
+
 except Exception as e:
-    print(f"Erro ao conectar com o Supabase: {e}")
+    # Se qualquer erro acontecer durante a conexão, imprime e para a aplicação.
+    print(f"ERRO CRÍTICO AO CONECTAR COM O BANCO DE DADOS: {e}")
     exit()
 
 # --- Inicialização do App Flask ---
