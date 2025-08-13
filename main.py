@@ -704,105 +704,6 @@ def adicionar_produto():
 
     return redirect(url_for('pagina_estoque'))
 
-# --- MOTOR DE CÁLCULO DE CUSTO MÉDIO PONDERADO (VERSÃO DEFINITIVA COM DIAGNÓSTICO) ---
-def atualizar_custo_produto(produto_id, tipo_movimentacao, quantidade, custo_unitario=0):
-    try:
-        print("\n--- INICIANDO ATUALIZAÇÃO DE CUSTO ---")
-        print(f"Dados recebidos: produto_id={produto_id}, tipo={tipo_movimentacao}, qtd={quantidade}, custo_unit={custo_unitario}")
-
-        produto_atual = supabase.table('produtos').select(
-            'estoque_atual', 'valor_total_estoque', 'custo_medio', 'quantidade_com_custo'
-        ).eq('id', produto_id).single().execute()
-        
-        if not produto_atual.data:
-            print(f"!!! ERRO: Produto com ID {produto_id} não encontrado.")
-            return
-
-        qtd_anterior = float(produto_atual.data.get('estoque_atual') or 0)
-        valor_total_anterior = float(produto_atual.data.get('valor_total_estoque') or 0)
-        qtd_com_custo_anterior = float(produto_atual.data.get('quantidade_com_custo') or 0)
-        custo_medio_anterior = float(produto_atual.data.get('custo_medio') or 0)
-
-        print(">>> Estado ANTERIOR do Produto:")
-        print(f"    - Qtd Estoque: {qtd_anterior}")
-        print(f"    - Qtd com Custo: {qtd_com_custo_anterior}")
-        print(f"    - Valor Total: {valor_total_anterior}")
-        print(f"    - Custo Médio: {custo_medio_anterior}")
-
-        qtd_movimentada = float(quantidade)
-        custo_unitario_mov = float(custo_unitario or 0)
-
-        nova_qtd_estoque = qtd_anterior
-        nova_qtd_com_custo = qtd_com_custo_anterior
-        novo_valor_total = valor_total_anterior
-        novo_custo_medio = custo_medio_anterior
-
-        if tipo_movimentacao == 'entrada':
-            print(">>> Lógica de ENTRADA acionada.")
-            nova_qtd_estoque = qtd_anterior + qtd_movimentada
-
-            if custo_unitario_mov > 0:
-                print("    - Entrada COM CUSTO.")
-                if qtd_com_custo_anterior == 0: # REGRA 1
-                    print("    - REGRA 1 (Primeira Valoração) acionada.")
-                    novo_valor_total = nova_qtd_estoque * custo_unitario_mov
-                    nova_qtd_com_custo = nova_qtd_estoque
-                else: # CÁLCULO PADRÃO
-                    print("    - CÁLCULO PADRÃO (Ponderado) acionado.")
-                    valor_entrada = qtd_movimentada * custo_unitario_mov
-                    novo_valor_total = valor_total_anterior + valor_entrada
-                    nova_qtd_com_custo = qtd_com_custo_anterior + qtd_movimentada
-            else: # REGRA 2
-                print("    - REGRA 2 (Entrada Custo Zero) acionada.")
-                valor_entrada_nocional = qtd_movimentada * custo_medio_anterior
-                novo_valor_total = valor_total_anterior + valor_entrada_nocional
-                
-                # A qtd_com_custo só aumenta se já houver um custo para ser absorvido.
-                if custo_medio_anterior > 0:
-                    print("    - Custo anterior > 0. Aumentando qtd_com_custo.")
-                    nova_qtd_com_custo = qtd_com_custo_anterior + qtd_movimentada
-                else:
-                    print("    - Custo anterior é 0. A qtd_com_custo NÃO MUDA.")
-
-
-        elif tipo_movimentacao == 'saida':
-            print(">>> Lógica de SAÍDA acionada.")
-            nova_qtd_estoque = qtd_anterior - qtd_movimentada
-            nova_qtd_com_custo = qtd_com_custo_anterior - qtd_movimentada
-            valor_saida = qtd_movimentada * custo_medio_anterior
-            novo_valor_total = valor_total_anterior - valor_saida
-
-        if nova_qtd_com_custo > 0:
-            novo_custo_medio = novo_valor_total / nova_qtd_com_custo
-        else:
-            novo_custo_medio = 0
-        
-        if nova_qtd_com_custo <= 0:
-            novo_valor_total = 0
-
-        nova_qtd_estoque = max(0, nova_qtd_estoque)
-        nova_qtd_com_custo = max(0, nova_qtd_com_custo)
-        novo_valor_total = max(0, novo_valor_total)
-
-        print(">>> Estado NOVO a ser salvo:")
-        print(f"    - Nova Qtd Estoque: {nova_qtd_estoque}")
-        print(f"    - Nova Qtd com Custo: {nova_qtd_com_custo}")
-        print(f"    - Novo Valor Total: {novo_valor_total}")
-        print(f"    - Novo Custo Médio: {novo_custo_medio}")
-
-        supabase.table('produtos').update({
-            'estoque_atual': nova_qtd_estoque,
-            'quantidade_com_custo': nova_qtd_com_custo,
-            'valor_total_estoque': round(novo_valor_total, 2),
-            'custo_medio': round(novo_custo_medio, 2)
-        }).eq('id', produto_id).execute()
-        
-        print("--- ATUALIZAÇÃO DE CUSTO FINALIZADA ---")
-
-    except Exception as e:
-        print(f"!!! ERRO CRÍTICO dentro do motor de cálculo: {e}")
-        pass
-
 @app.route('/movimentacao/<int:produto_id>/<tipo>')
 def pagina_movimentacao(produto_id, tipo):
     if 'user_id' not in session: return redirect(url_for('login'))
@@ -830,37 +731,69 @@ def registrar_movimentacao():
         flash('Erro: A quantidade da movimentação deve ser maior que zero.', 'danger')
         return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
     
-    # --- NOVO BLOCO CIRÚRGICO ---
-    custo_unitario_str = request.form.get('custo_unitario', '0').replace(',', '.') or '0'
-    custo_unitario = float(custo_unitario_str)
+    response_produto = supabase.table('produtos').select('estoque_atual, valor_total_estoque, quantidade_com_custo').eq('id', produto_id).limit(1).single().execute()
+    produto_atual = response_produto.data
     
-    # Monta o dicionário para a tabela 'movimentacoes'
-    dados_movimentacao = {
-        'produto_id': produto_id,
-        'tipo': tipo,
-        'quantidade': quantidade_movimentada,
-        'usuario_id': session['user_id'],
-        'custo_unitario': custo_unitario,
-        'fornecedor_id': request.form.get('fornecedor_id') if request.form.get('fornecedor_id') else None,
-        'colaborador_id': request.form.get('colaborador_id') if request.form.get('colaborador_id') else None,
-        'equipamento_id': request.form.get('equipamento_id') if request.form.get('equipamento_id') else None,
-        'numero_documento': request.form.get('numero_documento'),
-        'numero_requisicao_alvo': request.form.get('numero_requisicao_alvo')
-    }
+    estoque_antigo = float(produto_atual.get('estoque_atual', 0))
+    valor_total_antigo = float(produto_atual.get('valor_total_estoque', 0))
+    quantidade_com_custo_antiga = float(produto_atual.get('quantidade_com_custo', 0))
 
-    # Insere na tabela de movimentações
+    dados_movimentacao = { 'produto_id': produto_id, 'tipo': tipo, 'quantidade': quantidade_movimentada, 'usuario_id': session['user_id'] }
+    
+    if tipo == 'entrada':
+        custo_unitario_entrada = float(request.form.get('custo_unitario', 0))
+        if custo_unitario_entrada < 0:
+            flash('Erro: O custo unitário não pode ser um valor negativo.', 'danger')
+            return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
+
+        numero_requisicao_alvo = request.form.get('numero_requisicao_alvo', '').strip().upper()
+        fornecedor_id = request.form.get('fornecedor_id')
+
+        dados_movimentacao.update({
+            'preco_unitario': custo_unitario_entrada,
+            'fornecedor_id': int(fornecedor_id) if fornecedor_id else None,
+            'numero_requisicao_alvo': numero_requisicao_alvo,
+            'tipo_documento': request.form.get('tipo_documento'),
+            'numero_documento': request.form.get('numero_documento', '0')
+        })
+        
+        novo_estoque = estoque_antigo + quantidade_movimentada
+        novo_valor_total = valor_total_antigo
+        nova_quantidade_com_custo = quantidade_com_custo_antiga
+        if custo_unitario_entrada > 0:
+            novo_valor_total += quantidade_movimentada * custo_unitario_entrada
+            nova_quantidade_com_custo += quantidade_movimentada
+        
+        dados_produto_update = { 'estoque_atual': novo_estoque, 'valor_total_estoque': novo_valor_total, 'quantidade_com_custo': nova_quantidade_com_custo }
+        flash_message = 'Entrada registrada com sucesso!'
+
+    else: # Saída
+        if estoque_antigo < quantidade_movimentada:
+            flash(f'Erro: Quantidade de saída ({quantidade_movimentada}) é maior que o estoque atual ({estoque_antigo}).', 'danger')
+            return redirect(url_for('pagina_movimentacao', produto_id=produto_id, tipo=tipo))
+        
+        equipamento_id_str = request.form.get('equipamento_id')
+        equipamento_id = int(equipamento_id_str) if equipamento_id_str else None
+        colaborador_id_str = request.form.get('colaborador_id')
+        colaborador_id = int(colaborador_id_str) if colaborador_id_str else None
+        custo_medio_atual = valor_total_antigo / quantidade_com_custo_antiga if quantidade_com_custo_antiga > 0 else 0
+        
+        dados_movimentacao.update({
+            'preco_unitario': custo_medio_atual,
+            'colaborador_id': colaborador_id,
+            'equipamento_id': equipamento_id,
+            'numero_requisicao_manual': request.form.get('numero_requisicao_manual')
+        })
+
+        novo_estoque = estoque_antigo - quantidade_movimentada
+        novo_valor_total = valor_total_antigo - (quantidade_movimentada * custo_medio_atual)
+        nova_quantidade_com_custo = quantidade_com_custo_antiga - quantidade_movimentada
+        
+        dados_produto_update = { 'estoque_atual': max(0, novo_estoque), 'valor_total_estoque': max(0, novo_valor_total), 'quantidade_com_custo': max(0, nova_quantidade_com_custo) }
+        flash_message = 'Saída registrada com sucesso!'
+
     supabase.table('movimentacoes').insert(dados_movimentacao).execute()
-    
-    # Chama o novo "motor" de cálculo para atualizar a tabela de produtos
-    atualizar_custo_produto(
-        produto_id=produto_id,
-        tipo_movimentacao=tipo,
-        quantidade=quantidade_movimentada,
-        custo_unitario=custo_unitario
-    )
-    
-    flash_message = 'Entrada registrada com sucesso!' if tipo == 'entrada' else 'Saída registrada com sucesso!'
-    # --- FIM DO NOVO BLOCO ---
+    supabase.table('produtos').update(dados_produto_update).eq('id', produto_id).execute()
     
     # --- CORREÇÃO: LÓGICA DE BAIXA EM CASCATA RESTAURADA ---
     if tipo == 'entrada' and dados_movimentacao.get('numero_requisicao_alvo'):
